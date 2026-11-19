@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  verify:
+    name: Typecheck, Lint, Test & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: TypeScript maximum-strictness compiler check
+        run: npm run typecheck
+
+      - name: ESLint & Biome strictness check
+        run: npm run lint
+
+      - name: Run unit & integration tests
+        run: npm test
+
+      - name: Production Vite build
+        run: npm run build
+
+  android:
+    name: Android Capacitor Sync & Gradle Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build web bundle & sync Capacitor Android
+        run: npm run android:sync
+
+      - name: Compile Android Java sources & run unit tests
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest compileDebugJavaWithJavac

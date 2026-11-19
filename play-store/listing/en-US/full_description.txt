@@ -1,0 +1,41 @@
+Learn how Vietnamese is actually spoken on the street — not just in textbooks.
+
+Nói is an offline-first Vietnamese phrasebook, spaced-repetition study deck, pronunciation tone coach, and bidirectional English–Vietnamese translator built for travelers, expats, heritage learners, and everyday conversation.
+
+THREE REGIONAL DIALECTS SIDE BY SIDE
+Vietnamese varies dramatically from North to South. Switch effortlessly between:
+• Northern (Hanoi) — crisp 6-tone clarity, "nâu đá", "nhé", "thế"
+• Central (Da Nang & Hue) — authentic local words like "ni", "rứa", "chi", "nỏ"
+• Southern (Ho Chi Minh City / Saigon) — everyday "nha", "hông", "mắc", "quẹo"
+
+Every curated phrase shows the natural street wording for all three regions, an easy-to-read phonetic guide, the formal textbook equivalent, and a concise street note explaining when and how locals use it.
+
+240+ CURATED EVERYDAY PHRASES
+Organized into 6 practical categories:
+• Coffee & Food
+• Markets & Shopping
+• Getting Around
+• Conversation
+• Politeness & Pronouns
+• Numbers & Time
+
+Add your own custom phrases, star favorite words and expressions, prioritize what you need most, and review with built-in spaced repetition.
+
+OFFLINE PRONUNCIATION & TONE COACH
+Practice speaking Vietnamese tones with real-time on-device pitch contour analysis:
+• Visualize target vs. spoken pitch curves across all 6 tones (ngang, huyền, sắc, hỏi, ngã, nặng)
+• Play back your own recording immediately to compare
+• Adjust listening playback speed from 10% to 100% without distorting pitch
+• Works 100% offline — tone coach recordings never leave your device
+
+INSTANT OFFLINE BIDIRECTIONAL TRANSLATOR
+• Translate English to Vietnamese or Vietnamese to English with a built-in 600+ entry dictionary
+• View regional North / Central / South variants and word-by-word breakdowns
+• Convert Vietnamese Đồng (VND) amounts and numbers naturally
+• Use "Show Big" full-screen cards to show phrases clearly to drivers, vendors, or servers
+
+PRIVACY-FIRST & BUILT FOR TRAVEL
+• Works offline on planes, buses, and side streets
+• No account or sign-in required
+• No ads, no subscriptions, and no third-party tracking
+• Export and restore your personal study progress anytime as a local JSON backup

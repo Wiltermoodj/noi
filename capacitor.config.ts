@@ -1,0 +1,38 @@
+import type { CapacitorConfig } from "@capacitor/cli";
+
+const config: CapacitorConfig = {
+  appId: "app.noi.vietnamese",
+  appName: "Nói",
+  webDir: "dist",
+  server: {
+    androidScheme: "https",
+  },
+  android: {
+    allowMixedContent: false,
+    captureInput: true,
+    webContentsDebuggingEnabled: false,
+  },
+  plugins: {
+    SplashScreen: {
+      launchShowDuration: 900,
+      launchAutoHide: true,
+      backgroundColor: "#FAFAFA",
+      androidScaleType: "CENTER_CROP",
+      showSpinner: false,
+      splashFullScreen: false,
+      splashImmersive: false,
+    },
+    StatusBar: {
+      style: "LIGHT",
+      backgroundColor: "#FAFAFA",
+      overlaysWebView: false,
+    },
+    SystemBars: {
+      style: "LIGHT",
+      insetsHandling: "css",
+      initialViewportFitValueHint: "cover",
+    },
+  },
+};
+
+export default config;

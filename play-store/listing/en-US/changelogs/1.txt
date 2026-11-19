@@ -1,0 +1,6 @@
+Initial Google Play release of Nói (v1.0.0):
+• 240 everyday spoken Vietnamese phrases across Northern, Central, and Southern dialects
+• Spaced-repetition study deck with custom phrases, starring, and local JSON backup
+• On-device Offline Tone Coach with live pitch contours and self-playback
+• Offline English ↔ Vietnamese translator with 600+ word dictionary, VND numbers, and Show Big cards
+• Native Android Text-to-Speech, microphone handling, and optional regional voice caching

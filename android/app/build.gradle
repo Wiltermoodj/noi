@@ -1,0 +1,111 @@
+apply plugin: 'com.android.application'
+
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def resolveNonEmpty = { value ->
+    def trimmed = value != null ? value.toString().trim() : ""
+    return trimmed.isEmpty() ? null : trimmed
+}
+
+def releaseStoreFile = resolveNonEmpty(System.getenv("ANDROID_KEYSTORE_PATH")) ?: resolveNonEmpty(keystoreProperties['storeFile'])
+def releaseStorePassword = resolveNonEmpty(System.getenv("ANDROID_KEYSTORE_PASSWORD")) ?: resolveNonEmpty(keystoreProperties['storePassword'])
+def releaseKeyAlias = resolveNonEmpty(System.getenv("ANDROID_KEY_ALIAS")) ?: resolveNonEmpty(keystoreProperties['keyAlias'])
+def releaseKeyPassword = resolveNonEmpty(System.getenv("ANDROID_KEY_PASSWORD")) ?: resolveNonEmpty(keystoreProperties['keyPassword'])
+def hasReleaseSigning = releaseStoreFile != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null
+def requireReleaseSigning = (System.getenv("ANDROID_REQUIRE_SIGNING") ?: project.findProperty("requireReleaseSigning") ?: "false").toString().toBoolean()
+
+if (requireReleaseSigning && !hasReleaseSigning) {
+    throw new GradleException("Release signing is required (requireReleaseSigning=true) but keystore credentials are missing. Configure android/keystore.properties or ANDROID_KEYSTORE_* environment variables.")
+}
+
+def resolvedVersionCode = (resolveNonEmpty(System.getenv("ANDROID_VERSION_CODE")) ?: resolveNonEmpty(project.findProperty("versionCode")) ?: "1").toInteger()
+def resolvedVersionName = (resolveNonEmpty(System.getenv("ANDROID_VERSION_NAME")) ?: resolveNonEmpty(project.findProperty("versionName")) ?: "1.0.0").toString()
+
+android {
+    namespace = "app.noi.vietnamese"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "app.noi.vietnamese"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode resolvedVersionCode
+        versionName resolvedVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf2b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    bundle {
+        language {
+            enableSplit = false
+        }
+        density {
+            enableSplit = true
+        }
+        abi {
+            enableSplit = true
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

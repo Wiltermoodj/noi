@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nói</string>
+    <string name="title_activity_main">Nói</string>
+    <string name="package_name">app.noi.vietnamese</string>
+    <string name="custom_url_scheme">app.noi.vietnamese</string>
+</resources>

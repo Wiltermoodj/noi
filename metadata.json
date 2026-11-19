@@ -1,0 +1,6 @@
+{
+  "name": "Nói — Spoken Vietnamese",
+  "description": "Offline spoken Vietnamese phrasebook and bidirectional translator with Northern, Central, and Southern dialects.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
