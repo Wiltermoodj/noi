@@ -29,6 +29,7 @@ describe("storageService schema validation and quota resilience", () => {
     const sanitized = parseSettingsFromRaw(
       JSON.stringify({
         region: "unknown-region",
+        theme: "neon-cyberpunk",
         ttsSource: "invalid-source",
         ttsVoiceProfile: "robot",
         playbackSpeed: 999,
@@ -38,6 +39,7 @@ describe("storageService schema validation and quota resilience", () => {
     );
 
     expect(sanitized.region).toBe("south");
+    expect(sanitized.theme).toBe("system");
     expect(sanitized.ttsSource).toBe("cloud-first");
     expect(sanitized.ttsVoiceProfile).toBe("auto");
     expect(sanitized.playbackSpeed).toBe(100);
@@ -49,6 +51,7 @@ describe("storageService schema validation and quota resilience", () => {
     const parsed = parseSettingsFromRaw(
       JSON.stringify({
         region: "north",
+        theme: "dark",
         slowVietnamese: true,
         ttsSource: "device-only",
         ttsVoiceProfile: "female",
@@ -57,6 +60,7 @@ describe("storageService schema validation and quota resilience", () => {
     );
 
     expect(parsed.region).toBe("north");
+    expect(parsed.theme).toBe("dark");
     expect(parsed.playbackSpeed).toBe(70);
     expect(parsed.slowVietnamese).toBe(true);
     expect(parsed.ttsSource).toBe("device-only");

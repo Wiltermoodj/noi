@@ -380,6 +380,7 @@ public class NoiAndroidPlugin extends Plugin {
                         item.put("name", voice.getName());
                         item.put("lang", langTag);
                         item.put("localService", !voice.isNetworkConnectionRequired());
+                        item.put("quality", voice.getQuality());
                         voicesArray.put(item);
                     }
                 }
@@ -408,6 +409,35 @@ public class NoiAndroidPlugin extends Plugin {
 
         stopTtsInternal();
         dispatchSpeakRequest(new PendingTtsRequest(call, text, lang, rate, pitch, voiceURI));
+    }
+
+    private Voice findBestVoiceForLocale(Set<Voice> voices, Locale targetLocale) {
+        if (voices == null || targetLocale == null) return null;
+        String targetLang = targetLocale.getLanguage().toLowerCase(Locale.US);
+        Voice best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (Voice v : voices) {
+            Locale loc = v.getLocale();
+            if (loc == null || !loc.getLanguage().toLowerCase(Locale.US).equals(targetLang)) {
+                continue;
+            }
+            Set<String> features = v.getFeatures();
+            if (features != null && features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED)) {
+                continue;
+            }
+            int score = v.getQuality();
+            if (!v.isNetworkConnectionRequired()) {
+                score += 250;
+            }
+            if (v.getLatency() <= Voice.LATENCY_LOW) {
+                score += 40;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = v;
+            }
+        }
+        return best;
     }
 
     private void dispatchSpeakRequest(PendingTtsRequest req) {
@@ -461,20 +491,35 @@ public class NoiAndroidPlugin extends Plugin {
             } else {
                 Locale targetLocale = Locale.forLanguageTag(req.lang);
                 boolean voiceMatched = false;
-                if (req.voiceURI != null && !req.voiceURI.isEmpty()) {
+                Set<Voice> availableVoices = null;
+                try {
+                    availableVoices = tts.getVoices();
+                } catch (Exception ignored) {
+                    // Fall back to language matching
+                }
+
+                if (req.voiceURI != null && !req.voiceURI.isEmpty() && availableVoices != null) {
                     try {
-                        Set<Voice> voices = tts.getVoices();
-                        if (voices != null) {
-                            for (Voice v : voices) {
-                                if (req.voiceURI.equals(v.getName())) {
-                                    int voiceRes = tts.setVoice(v);
-                                    voiceMatched = voiceRes == TextToSpeech.SUCCESS;
-                                    break;
-                                }
+                        for (Voice v : availableVoices) {
+                            if (req.voiceURI.equals(v.getName())) {
+                                int voiceRes = tts.setVoice(v);
+                                voiceMatched = voiceRes == TextToSpeech.SUCCESS;
+                                break;
                             }
                         }
                     } catch (Exception ignored) {
-                        // Fall back to language matching
+                        // Fall back to best voice / language matching
+                    }
+                }
+
+                if (!voiceMatched && availableVoices != null) {
+                    try {
+                        Voice bestVoice = findBestVoiceForLocale(availableVoices, targetLocale);
+                        if (bestVoice != null) {
+                            voiceMatched = tts.setVoice(bestVoice) == TextToSpeech.SUCCESS;
+                        }
+                    } catch (Exception ignored) {
+                        // Fall back to setLanguage
                     }
                 }
 

@@ -283,23 +283,23 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
         tabIndex={-1}
         aria-label="Close modal backdrop"
         onClick={onClose}
-        className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+        className="fixed inset-0 bg-backdrop backdrop-blur-xs"
       />
 
       <form
         onSubmit={handleCreate}
-        className="pb-safe-modal relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6 shadow-xl sm:rounded-2xl sm:pb-6"
+        className="pb-safe-modal relative z-10 max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-surface p-6 shadow-xl sm:rounded-2xl sm:pb-6"
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-stone-200 sm:hidden" />
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border sm:hidden" />
         <div className="flex items-center justify-between gap-4">
-          <h2 id={modalTitleId} className="font-display text-lg font-semibold text-stone-900">
+          <h2 id={modalTitleId} className="font-display text-lg font-semibold text-ink">
             {isEditing ? "Edit Custom Phrase" : "Add Custom Phrase"}
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-500 hover:bg-stone-100"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted hover:bg-surface-muted"
           >
             <X className="h-5 w-5" />
           </button>
@@ -307,7 +307,10 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
 
         <div className="mt-4 space-y-4">
           <div>
-            <label htmlFor={englishInputId} className="block text-xs font-medium text-stone-700">
+            <label
+              htmlFor={englishInputId}
+              className="block text-xs font-medium text-ink-secondary"
+            >
               English meaning
             </label>
             <input
@@ -317,7 +320,7 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
               value={newEnglish}
               onChange={handleNewEnglishChange}
               placeholder="e.g., No ice, please."
-              className="mt-1 min-h-[44px] w-full rounded-xl border border-stone-200 px-3 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+              className="mt-1 min-h-[44px] w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
             />
           </div>
 
@@ -325,7 +328,7 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
             <div className="flex items-center justify-between gap-2">
               <label
                 htmlFor={vietnameseInputId}
-                className="block text-xs font-medium text-stone-700"
+                className="block text-xs font-medium text-ink-secondary"
               >
                 Spoken Vietnamese
               </label>
@@ -333,7 +336,7 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
                 type="button"
                 onClick={handlePreviewAudio}
                 disabled={!newVietnamese.trim()}
-                className="inline-flex min-h-[28px] items-center gap-1 rounded-lg px-2 text-xs font-medium text-[#0F766E] transition-colors hover:bg-[#0F766E]/10 disabled:opacity-40"
+                className="inline-flex min-h-[28px] items-center gap-1 rounded-lg px-2 text-xs font-medium text-accent transition-colors hover:bg-accent-soft disabled:opacity-40"
               >
                 {previewBusy ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -350,14 +353,14 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
               value={newVietnamese}
               onChange={handleNewVietnameseChange}
               placeholder="e.g., Không đá nha chị."
-              className="mt-1 min-h-[44px] w-full rounded-xl border border-stone-200 px-3 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+              className="mt-1 min-h-[44px] w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
             />
 
             <button
               type="button"
               onClick={handleToggleRegional}
               aria-expanded={showRegional}
-              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-stone-500 transition-colors hover:text-[#0F766E]"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-ink-muted transition-colors hover:text-accent"
             >
               {showRegional ? (
                 <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
@@ -368,11 +371,11 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
             </button>
 
             {showRegional ? (
-              <div className="mt-2.5 space-y-2.5 rounded-xl bg-stone-50 p-3">
+              <div className="mt-2.5 space-y-2.5 rounded-xl bg-surface-subtle p-3">
                 <div>
                   <label
                     htmlFor={northInputId}
-                    className="block text-[11px] font-medium text-stone-600"
+                    className="block text-[11px] font-medium text-ink-secondary"
                   >
                     North (Hanoi)
                   </label>
@@ -382,13 +385,13 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
                     value={northVi}
                     onChange={handleNorthChange}
                     placeholder="Northern phrasing"
-                    className="mt-1 min-h-[38px] w-full rounded-lg border border-stone-200 bg-white px-2.5 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+                    className="mt-1 min-h-[38px] w-full rounded-lg border border-border bg-surface px-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
                   />
                 </div>
                 <div>
                   <label
                     htmlFor={centralInputId}
-                    className="block text-[11px] font-medium text-stone-600"
+                    className="block text-[11px] font-medium text-ink-secondary"
                   >
                     Central (Hue · Da Nang)
                   </label>
@@ -398,13 +401,13 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
                     value={centralVi}
                     onChange={handleCentralChange}
                     placeholder="Central phrasing"
-                    className="mt-1 min-h-[38px] w-full rounded-lg border border-stone-200 bg-white px-2.5 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+                    className="mt-1 min-h-[38px] w-full rounded-lg border border-border bg-surface px-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
                   />
                 </div>
                 <div>
                   <label
                     htmlFor={southInputId}
-                    className="block text-[11px] font-medium text-stone-600"
+                    className="block text-[11px] font-medium text-ink-secondary"
                   >
                     South (Saigon)
                   </label>
@@ -414,7 +417,7 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
                     value={southVi}
                     onChange={handleSouthChange}
                     placeholder="Southern phrasing"
-                    className="mt-1 min-h-[38px] w-full rounded-lg border border-stone-200 bg-white px-2.5 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+                    className="mt-1 min-h-[38px] w-full rounded-lg border border-border bg-surface px-2.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
@@ -422,7 +425,10 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
           </div>
 
           <div>
-            <label htmlFor={phoneticInputId} className="block text-xs font-medium text-stone-700">
+            <label
+              htmlFor={phoneticInputId}
+              className="block text-xs font-medium text-ink-secondary"
+            >
               Phonetic guide (optional)
             </label>
             <input
@@ -431,19 +437,22 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
               value={newPhonetic}
               onChange={handleNewPhoneticChange}
               placeholder="e.g., khong dah nyah chee"
-              className="mt-1 min-h-[44px] w-full rounded-xl border border-stone-200 px-3 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+              className="mt-1 min-h-[44px] w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
             />
           </div>
 
           <div>
-            <label htmlFor={categorySelectId} className="block text-xs font-medium text-stone-700">
+            <label
+              htmlFor={categorySelectId}
+              className="block text-xs font-medium text-ink-secondary"
+            >
               Category
             </label>
             <select
               id={categorySelectId}
               value={newCategory}
               onChange={handleNewCategoryChange}
-              className="mt-1 min-h-[44px] w-full rounded-xl border border-stone-200 bg-white px-2.5 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+              className="mt-1 min-h-[44px] w-full rounded-xl border border-border bg-surface px-2.5 text-sm text-ink focus:border-accent focus:outline-none"
             >
               {PHRASE_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
@@ -454,7 +463,7 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
           </div>
 
           <div>
-            <label htmlFor={noteInputId} className="block text-xs font-medium text-stone-700">
+            <label htmlFor={noteInputId} className="block text-xs font-medium text-ink-secondary">
               Personal note (optional)
             </label>
             <input
@@ -463,17 +472,17 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
               value={newNote}
               onChange={handleNewNoteChange}
               placeholder="e.g., Coffee shop near Ben Thanh"
-              className="mt-1 min-h-[44px] w-full rounded-xl border border-stone-200 px-3 text-sm text-stone-900 focus:border-[#0F766E] focus:outline-none"
+              className="mt-1 min-h-[44px] w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none"
             />
           </div>
 
           <label
             htmlFor={starCheckboxId}
-            className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50/70 px-3.5 py-2"
+            className="flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-xl border border-border bg-surface-subtle px-3.5 py-2"
           >
-            <span className="flex items-center gap-2 text-xs font-medium text-stone-800">
+            <span className="flex items-center gap-2 text-xs font-medium text-ink">
               <Star
-                className={`h-4 w-4 ${starOnSave ? "fill-amber-500 text-amber-500" : "text-stone-400"}`}
+                className={`h-4 w-4 ${starOnSave ? "fill-star-fill text-star" : "text-ink-faint"}`}
                 aria-hidden="true"
               />
               <span>Save to Personal Phrasebook</span>
@@ -483,7 +492,7 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
               type="checkbox"
               checked={starOnSave}
               onChange={handleStarOnSaveChange}
-              className="h-4 w-4 accent-[#0F766E]"
+              className="h-4 w-4 accent-accent"
             />
           </label>
         </div>
@@ -492,13 +501,13 @@ const AddPhraseModalContent: FC<Omit<AddPhraseModalProps, "open">> = ({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[48px] flex-1 rounded-xl border border-stone-200 text-sm font-medium text-stone-700 hover:bg-stone-50"
+            className="min-h-[48px] flex-1 rounded-xl border border-border text-sm font-medium text-ink-secondary hover:bg-surface-subtle"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="min-h-[48px] flex-1 rounded-xl bg-[#0F766E] text-sm font-medium text-white hover:bg-[#0D655E]"
+            className="min-h-[48px] flex-1 rounded-xl bg-accent text-sm font-medium text-accent-fg hover:bg-accent-hover"
           >
             {isEditing ? "Save Changes" : "Save Offline"}
           </button>

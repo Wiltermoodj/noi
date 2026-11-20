@@ -17,7 +17,7 @@ interface InstallGuideModalProps {
 const InstallGuideModal: FC<InstallGuideModalProps> = ({ mode, titleId, onClose }) => {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 backdrop-blur-xs sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-backdrop p-0 backdrop-blur-xs sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -29,24 +29,24 @@ const InstallGuideModal: FC<InstallGuideModalProps> = ({ mode, titleId, onClose 
         onClick={onClose}
         className="fixed inset-0"
       />
-      <div className="pb-safe-modal relative z-10 w-full max-w-sm rounded-t-3xl bg-white p-6 shadow-xl sm:rounded-2xl sm:pb-6">
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-stone-200 sm:hidden" />
+      <div className="pb-safe-modal relative z-10 w-full max-w-sm rounded-t-3xl bg-surface p-6 shadow-xl sm:rounded-2xl sm:pb-6">
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border sm:hidden" />
         <div className="flex items-start justify-between gap-4">
-          <h3 id={titleId} className="font-display text-lg font-semibold text-stone-900">
+          <h3 id={titleId} className="font-display text-lg font-semibold text-ink">
             {mode === "ios" ? "Install on iPhone / iPad" : "Install Nói for offline use"}
           </h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close instructions"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-ink-muted hover:bg-surface-muted"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
         {mode === "ios" ? (
-          <ol className="mt-3 space-y-2.5 text-sm leading-relaxed text-stone-600">
+          <ol className="mt-3 space-y-2.5 text-sm leading-relaxed text-ink-secondary">
             <li>
               1. Tap the <strong>Share</strong> button in Safari&apos;s toolbar.
             </li>
@@ -58,7 +58,7 @@ const InstallGuideModal: FC<InstallGuideModalProps> = ({ mode, titleId, onClose 
             </li>
           </ol>
         ) : (
-          <ol className="mt-3 space-y-2.5 text-sm leading-relaxed text-stone-600">
+          <ol className="mt-3 space-y-2.5 text-sm leading-relaxed text-ink-secondary">
             <li>
               1. Open your browser&apos;s menu or look for the <strong>Install</strong> icon in the
               address bar.
@@ -76,7 +76,7 @@ const InstallGuideModal: FC<InstallGuideModalProps> = ({ mode, titleId, onClose 
         <button
           type="button"
           onClick={onClose}
-          className="mt-5 w-full rounded-xl bg-stone-900 py-3 text-sm font-medium text-white transition-colors hover:bg-stone-800"
+          className="mt-5 w-full rounded-xl bg-surface-inverse py-3 text-sm font-medium text-ink-inverse transition-colors hover:opacity-90"
         >
           Got it
         </button>
@@ -136,8 +136,8 @@ export const PWAInstallButton: FC<PWAInstallButtonProps> = ({ variant = "compact
         onClick={handleInstall}
         className={
           variant === "full"
-            ? "flex w-full items-center justify-center gap-2 rounded-xl bg-[#0F766E] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#0D655E] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E]"
-            : "flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0F766E]"
+            ? "flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            : "flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         }
       >
         <Download className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -155,8 +155,8 @@ export const PWAInstallButton: FC<PWAInstallButtonProps> = ({ variant = "compact
           onClick={openIOSGuide}
           className={
             variant === "full"
-              ? "flex w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
-              : "flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-50"
+              ? "flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle"
+              : "flex min-h-[44px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle"
           }
         >
           <Share className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -177,9 +177,9 @@ export const PWAInstallButton: FC<PWAInstallButtonProps> = ({ variant = "compact
         <button
           type="button"
           onClick={openBrowserGuide}
-          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
+          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle"
         >
-          <Smartphone className="h-4 w-4 shrink-0 text-[#0F766E]" aria-hidden="true" />
+          <Smartphone className="h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
           <span>Install App for Offline Use</span>
         </button>
 

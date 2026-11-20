@@ -1,10 +1,23 @@
-import { AlertCircle, Check, Download, Loader2, RotateCcw, Upload, Volume2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Download,
+  Loader2,
+  Monitor,
+  Moon,
+  RotateCcw,
+  Sun,
+  Upload,
+  Volume2,
+  X,
+} from "lucide-react";
 import type { ChangeEvent, FC, MouseEvent } from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import { useSpeakingStatus } from "../hooks/useSpeakingStatus";
 import {
   audioService,
+  type OfflineAudioBudgetStats,
   type OfflinePackProgress,
   type SpeechVoiceInfo,
 } from "../services/audioService";
@@ -17,6 +30,7 @@ import {
   DIALECT_REGIONS,
   type DialectRegion,
   type Phrase,
+  type ThemePreference,
   type TtsVoiceProfile,
 } from "../types/vietnamese";
 import { downloadAppBackupJson } from "../utils/backupDownload";
@@ -38,6 +52,12 @@ const VOICE_PROFILES: { id: TtsVoiceProfile; label: string }[] = [
   { id: "auto", label: "Auto by Region" },
   { id: "female", label: "Female" },
   { id: "male", label: "Male" },
+];
+
+const THEME_OPTIONS: { id: ThemePreference; label: string }[] = [
+  { id: "system", label: "System" },
+  { id: "light", label: "Light" },
+  { id: "dark", label: "Dark" },
 ];
 
 const WIDTH_STEPS: Record<number, string> = {
@@ -65,6 +85,39 @@ function getRegionalSampleText(region: DialectRegion): string {
   if (region === "central") return "Xin chào, bữa ni rứa răng rồi?";
   return "Xin chào, hôm nay sao rồi nha?";
 }
+
+interface ThemeOptionButtonProps {
+  id: ThemePreference;
+  label: string;
+  active: boolean;
+  onSelect: (theme: ThemePreference) => void;
+}
+
+const ThemeOptionButton: FC<ThemeOptionButtonProps> = ({ id, label, active, onSelect }) => {
+  const handleClick = useCallback(() => {
+    onSelect(id);
+  }, [id, onSelect]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-pressed={active}
+      className={`flex min-h-[38px] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors ${
+        active ? "bg-surface text-ink shadow-xs" : "text-ink-muted hover:text-ink"
+      }`}
+    >
+      {id === "light" ? (
+        <Sun className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : id === "dark" ? (
+        <Moon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <Monitor className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span>{label}</span>
+    </button>
+  );
+};
 
 interface RegionOptionButtonProps {
   region: DialectRegion;
@@ -100,17 +153,17 @@ const RegionOptionButton: FC<RegionOptionButtonProps> = ({
     <div
       className={`flex min-h-[60px] flex-col justify-between rounded-xl border p-3 transition-colors ${
         active
-          ? "border-[#0F766E] bg-[#0F766E]/5 text-stone-900"
-          : "border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+          ? "border-accent bg-accent-muted text-ink"
+          : "border-border bg-surface text-ink-secondary hover:bg-surface-subtle"
       }`}
     >
       <div className="flex w-full items-start justify-between gap-2">
         <button type="button" onClick={handleSelect} className="min-w-0 flex-1 text-left">
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-semibold">{meta.label}</span>
-            {active ? <Check className="h-3.5 w-3.5 text-[#0F766E]" aria-hidden="true" /> : null}
+            {active ? <Check className="h-3.5 w-3.5 text-accent" aria-hidden="true" /> : null}
           </div>
-          <span className="mt-0.5 block text-xs text-stone-500">{meta.cities}</span>
+          <span className="mt-0.5 block text-xs text-ink-muted">{meta.cities}</span>
         </button>
 
         <button
@@ -120,8 +173,8 @@ const RegionOptionButton: FC<RegionOptionButtonProps> = ({
           title={`Hear ${meta.label} pronunciation`}
           className={`flex min-h-[32px] min-w-[32px] shrink-0 items-center justify-center rounded-lg transition-colors ${
             isBusy
-              ? "bg-[#0F766E] text-white"
-              : "text-stone-500 hover:bg-[#0F766E]/10 hover:text-[#0F766E]"
+              ? "bg-accent text-accent-fg"
+              : "text-ink-muted hover:bg-accent-soft hover:text-accent"
           }`}
         >
           {isBusy ? (
@@ -152,8 +205,8 @@ const VoiceProfileButton: FC<VoiceProfileButtonProps> = ({ profile, active, onSe
       onClick={handleClick}
       className={`min-h-[36px] rounded-lg border px-3 text-xs font-medium transition-colors ${
         active
-          ? "border-[#0F766E] bg-[#0F766E]/10 text-[#0F766E]"
-          : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+          ? "border-accent bg-accent-soft text-accent"
+          : "border-border bg-surface text-ink-muted hover:bg-surface-subtle hover:text-ink"
       }`}
     >
       {profile.label}
@@ -180,7 +233,7 @@ const VoiceFallbackSection: FC<VoiceFallbackSectionProps> = ({
 
   return (
     <div>
-      <label htmlFor={voiceSelectId} className="text-sm font-medium text-stone-900">
+      <label htmlFor={voiceSelectId} className="text-sm font-medium text-ink">
         Browser &amp; On-Device Vietnamese Voice
       </label>
 
@@ -190,7 +243,7 @@ const VoiceFallbackSection: FC<VoiceFallbackSectionProps> = ({
             id={voiceSelectId}
             value={preferredViVoiceURI}
             onChange={onVoiceChange}
-            className="min-h-[44px] w-full rounded-xl border border-stone-200 bg-white px-3 text-sm text-stone-800 focus:border-[#0F766E] focus:outline-none"
+            className="min-h-[44px] w-full rounded-xl border border-border bg-surface px-3 text-sm text-ink focus:border-accent focus:outline-none"
           >
             <option value="">Automatic (match selected region &amp; speaker)</option>
             {viVoices.map((v) => (
@@ -199,14 +252,14 @@ const VoiceFallbackSection: FC<VoiceFallbackSectionProps> = ({
               </option>
             ))}
           </select>
-          <p className="mt-1.5 text-xs text-stone-500">
+          <p className="mt-1.5 text-xs text-ink-muted">
             {viVoices.length} Vietnamese voice{viVoices.length > 1 ? "s" : ""} available in this
             browser/device.
           </p>
         </div>
       ) : (
         <div className="mt-1.5 space-y-2">
-          <p className="text-xs leading-relaxed text-stone-500">
+          <p className="text-xs leading-relaxed text-ink-muted">
             No OS Vietnamese voice detected. Regional Vietnamese Voice plays directly in your
             browser and caches phrases locally; to add an offline OS voice, install Vietnamese under
             iOS Spoken Content or Android Text-to-Speech.
@@ -215,7 +268,7 @@ const VoiceFallbackSection: FC<VoiceFallbackSectionProps> = ({
             <button
               type="button"
               onClick={handleOpenAndroidTts}
-              className="inline-flex min-h-[36px] items-center rounded-lg border border-stone-200 bg-white px-3 text-xs font-medium text-stone-800 hover:bg-stone-50"
+              className="inline-flex min-h-[36px] items-center rounded-lg border border-border bg-surface px-3 text-xs font-medium text-ink hover:bg-surface-subtle"
             >
               Open Android Text-to-Speech Settings
             </button>
@@ -245,7 +298,7 @@ const PackCooldownBanner: FC<PackCooldownBannerProps> = ({
   onResumeNow,
   onCancelAutoResume,
 }) => (
-  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning-border bg-warning-soft px-3 py-2 text-xs text-warning-ink">
     <span className="tabular-nums">
       {isOnline
         ? `Paused at ${String(cachedCount)}/${String(totalCount)} clips · resuming in ${String(cooldownSeconds)}s`
@@ -256,20 +309,42 @@ const PackCooldownBanner: FC<PackCooldownBannerProps> = ({
         type="button"
         onClick={onResumeNow}
         disabled={!isOnline}
-        className="font-semibold text-[#0F766E] hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+        className="font-semibold text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-50"
       >
         Resume Now
       </button>
       <button
         type="button"
         onClick={onCancelAutoResume}
-        className="font-medium text-stone-600 hover:text-stone-900"
+        className="font-medium text-ink-muted hover:text-ink"
       >
         Cancel
       </button>
     </div>
   </div>
 );
+
+function formatMegabytes(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  if (mb <= 0) return "0 MB";
+  return mb < 10 ? `${mb.toFixed(1)} MB` : `${String(Math.round(mb))} MB`;
+}
+
+function formatAudioBudgetSummary(budget: OfflineAudioBudgetStats | null): string | null {
+  if (!budget) return null;
+  const cachedMb = formatMegabytes(budget.storage.cachedBytes);
+  const storageBudgetMb = formatMegabytes(budget.storage.storageBudgetBytes);
+  const ramBudgetBytes =
+    budget.memoryBlobs.maxBytes + budget.decodedBuffers.maxBytes + budget.stretchedBuffers.maxBytes;
+  const ramUsedBytes =
+    budget.memoryBlobs.bytes + budget.decodedBuffers.bytes + budget.stretchedBuffers.bytes;
+  const ramSummary =
+    ramUsedBytes > 0
+      ? `${formatMegabytes(ramUsedBytes)}/${formatMegabytes(ramBudgetBytes)} RAM cache`
+      : `${formatMegabytes(ramBudgetBytes)} RAM budget`;
+  const persistLabel = budget.storage.persisted ? " · Persistent storage active" : "";
+  return `Offline audio budget: ${cachedMb} / ${storageBudgetMb} storage · ${ramSummary}${persistLabel}`;
+}
 
 function formatPackSummary(
   region: DialectRegion,
@@ -319,7 +394,7 @@ const PackActionSection: FC<PackActionSectionProps> = ({
   if (isDownloadingPack && packProgress) {
     return (
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs text-stone-600">
+        <div className="flex items-center justify-between text-xs text-ink-secondary">
           <span className="tabular-nums">
             Caching offline voice clips ({String(packProgress.completed)}/
             {String(packProgress.total)})…
@@ -327,14 +402,14 @@ const PackActionSection: FC<PackActionSectionProps> = ({
           <button
             type="button"
             onClick={onCancelDownload}
-            className="font-medium text-stone-700 hover:text-stone-900"
+            className="font-medium text-ink-secondary hover:text-ink"
           >
             Stop
           </button>
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-200">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
           <div
-            className={`h-full rounded-full bg-[#0F766E] transition-all duration-200 ${getProgressWidthClass(
+            className={`h-full rounded-full bg-accent transition-all duration-200 ${getProgressWidthClass(
               packProgress.completed,
               packProgress.total,
             )}`}
@@ -363,15 +438,15 @@ const PackActionSection: FC<PackActionSectionProps> = ({
         <button
           type="button"
           onClick={onDownloadCurrentRegion}
-          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-100"
+          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle"
         >
-          <Download className="h-3.5 w-3.5 text-[#0F766E]" aria-hidden="true" />
+          <Download className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
           <span>Download {DIALECT_META[region].label}</span>
         </button>
         <button
           type="button"
           onClick={onDownloadAllRegions}
-          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg bg-[#0F766E] px-3 text-xs font-medium text-white transition-colors hover:bg-[#0D655E]"
+          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-accent-fg transition-colors hover:bg-accent-hover"
         >
           <Download className="h-3.5 w-3.5" aria-hidden="true" />
           <span>Download All 3 Dialects</span>
@@ -381,7 +456,7 @@ const PackActionSection: FC<PackActionSectionProps> = ({
   }
 
   return (
-    <p className="text-xs leading-relaxed text-stone-500">
+    <p className="text-xs leading-relaxed text-ink-muted">
       {!isOnline
         ? "Currently offline — cached clips, OS Vietnamese voices, and tone melodies play without internet."
         : "Phrasebook, study deck, translator, tone coach, and on-device voices all work offline."}
@@ -407,6 +482,7 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
   serverCachedClips,
 }) => {
   const [packScope, setPackScope] = useState<OfflinePackScope>("essential");
+  const [includeSlowClips, setIncludeSlowClips] = useState(false);
   const [regionCacheStats, setRegionCacheStats] = useState<{
     cachedCount: number;
     totalCount: number;
@@ -415,6 +491,7 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
     cachedCount: number;
     totalCount: number;
   } | null>(null);
+  const [budgetStats, setBudgetStats] = useState<OfflineAudioBudgetStats | null>(null);
   const [packProgress, setPackProgress] = useState<OfflinePackProgress | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
   const [isDownloadingPack, setIsDownloadingPack] = useState(false);
@@ -436,16 +513,19 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
   const refreshCacheStats = useCallback(async () => {
     const opts = {
       slow: false,
+      includeSlow: includeSlowClips,
       ttsVoiceProfile,
     };
-    const [regStats, fullStats] = await Promise.all([
+    const [regStats, fullStats, nextBudget] = await Promise.all([
       audioService.getPhraseAudioCacheStats(targetPhrases, [region], opts),
       audioService.getPhraseAudioCacheStats(targetPhrases, [...DIALECT_REGIONS], opts),
+      audioService.getOfflineAudioBudgetStats(),
     ]);
     if (!isMountedRef.current) return;
     setRegionCacheStats(regStats);
     setAllCacheStats(fullStats);
-  }, [region, targetPhrases, ttsVoiceProfile]);
+    setBudgetStats(nextBudget);
+  }, [includeSlowClips, region, targetPhrases, ttsVoiceProfile]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -459,21 +539,24 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
     let cancelled = false;
     const opts = {
       slow: false,
+      includeSlow: includeSlowClips,
       ttsVoiceProfile,
     };
     void Promise.all([
       audioService.getPhraseAudioCacheStats(targetPhrases, [region], opts),
       audioService.getPhraseAudioCacheStats(targetPhrases, [...DIALECT_REGIONS], opts),
-    ]).then(([regStats, fullStats]) => {
+      audioService.getOfflineAudioBudgetStats(),
+    ]).then(([regStats, fullStats, nextBudget]) => {
       if (!cancelled) {
         setRegionCacheStats(regStats);
         setAllCacheStats(fullStats);
+        setBudgetStats(nextBudget);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [region, targetPhrases, ttsVoiceProfile]);
+  }, [includeSlowClips, region, targetPhrases, ttsVoiceProfile]);
 
   const handlePackDownloadResult = useCallback(
     (result: OfflinePackProgress, targetRegions: DialectRegion[], aborted: boolean) => {
@@ -514,16 +597,17 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
       setCooldownSeconds(0);
       setPendingResumeRegions(null);
       setCooldownSummary(null);
+      const speedMultiplier = includeSlowClips ? 2 : 1;
       setPackProgress({
         completed: 0,
-        total: targetPhrases.length * targetRegions.length,
+        total: targetPhrases.length * targetRegions.length * speedMultiplier,
         cachedCount: 0,
       });
       try {
         const result = await audioService.downloadOfflineAudioPack(
           targetPhrases,
           targetRegions,
-          { slow: false, ttsVoiceProfile },
+          { slow: false, includeSlow: includeSlowClips, ttsVoiceProfile },
           (progress) => {
             if (isMountedRef.current) {
               setPackProgress(progress);
@@ -546,6 +630,7 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
     },
     [
       handlePackDownloadResult,
+      includeSlowClips,
       isDownloadingPack,
       isOnline,
       refreshCacheStats,
@@ -580,6 +665,11 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
 
   const selectAllScope = useCallback(() => {
     setPackScope("all");
+    setPackNotice(null);
+  }, []);
+
+  const handleToggleIncludeSlow = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setIncludeSlowClips(e.target.checked);
     setPackNotice(null);
   }, []);
 
@@ -618,47 +708,64 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
     regionCacheStats.cachedCount === regionCacheStats.totalCount;
 
   const summaryText = formatPackSummary(region, regionCacheStats, allCacheStats, serverCachedClips);
+  const budgetSummaryText = formatAudioBudgetSummary(budgetStats);
 
   return (
-    <div className="space-y-3 rounded-xl border border-stone-200 bg-stone-50/70 p-4">
+    <div className="space-y-3 rounded-xl border border-border bg-surface-subtle p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-sm font-medium text-stone-900">Offline Audio Pack</p>
-          <p className="mt-0.5 text-xs text-stone-500 tabular-nums">{summaryText}</p>
+          <p className="text-sm font-medium text-ink">Offline Audio Pack</p>
+          <p className="mt-0.5 text-xs text-ink-muted tabular-nums">{summaryText}</p>
+          {budgetSummaryText ? (
+            <p className="mt-0.5 text-[11px] text-ink-faint tabular-nums">{budgetSummaryText}</p>
+          ) : null}
         </div>
         {isRegionReady ? (
-          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[#0F766E]">
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-accent">
             <Check className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Ready</span>
           </span>
         ) : null}
       </div>
 
-      <div className="inline-flex items-center gap-1 rounded-lg bg-stone-200/70 p-0.5">
-        <button
-          type="button"
-          onClick={selectEssentialScope}
-          disabled={isDownloadingPack}
-          className={`min-h-[32px] whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors ${
-            packScope === "essential"
-              ? "bg-white text-stone-900 shadow-xs"
-              : "text-stone-600 hover:text-stone-900"
-          }`}
-        >
-          Essential ({essentialPhrases.length})
-        </button>
-        <button
-          type="button"
-          onClick={selectAllScope}
-          disabled={isDownloadingPack}
-          className={`min-h-[32px] whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors ${
-            packScope === "all"
-              ? "bg-white text-stone-900 shadow-xs"
-              : "text-stone-600 hover:text-stone-900"
-          }`}
-        >
-          All ({phrases.length})
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-1 rounded-lg bg-surface-muted p-0.5">
+          <button
+            type="button"
+            onClick={selectEssentialScope}
+            disabled={isDownloadingPack}
+            className={`min-h-[32px] whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors ${
+              packScope === "essential"
+                ? "bg-surface text-ink shadow-xs"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            Essential ({essentialPhrases.length})
+          </button>
+          <button
+            type="button"
+            onClick={selectAllScope}
+            disabled={isDownloadingPack}
+            className={`min-h-[32px] whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors ${
+              packScope === "all"
+                ? "bg-surface text-ink shadow-xs"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            All ({phrases.length})
+          </button>
+        </div>
+
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-secondary">
+          <input
+            type="checkbox"
+            checked={includeSlowClips}
+            disabled={isDownloadingPack}
+            onChange={handleToggleIncludeSlow}
+            className="h-3.5 w-3.5 accent-accent"
+          />
+          <span>Include slow study clips</span>
+        </label>
       </div>
 
       <PackActionSection
@@ -676,7 +783,7 @@ const OfflineAudioPackCard: FC<OfflineAudioPackCardProps> = ({
         onDownloadAllRegions={handleDownloadAllRegions}
       />
 
-      {packNotice ? <p className="text-xs text-amber-800">{packNotice}</p> : null}
+      {packNotice ? <p className="text-xs text-warning">{packNotice}</p> : null}
     </div>
   );
 };
@@ -735,10 +842,10 @@ const BackupDataSection: FC<BackupDataSectionProps> = ({ onImportBackup, onNotif
   );
 
   return (
-    <div className="space-y-2 rounded-xl border border-stone-200 bg-stone-50/70 p-3.5">
+    <div className="space-y-2 rounded-xl border border-border bg-surface-subtle p-3.5">
       <div>
-        <p className="text-sm font-medium text-stone-900">Backup &amp; Restore Progress</p>
-        <p className="mt-0.5 text-xs text-stone-500">
+        <p className="text-sm font-medium text-ink">Backup &amp; Restore Progress</p>
+        <p className="mt-0.5 text-xs text-ink-muted">
           Save custom phrases, saved items, and dialect settings to a JSON file.
         </p>
       </div>
@@ -754,22 +861,22 @@ const BackupDataSection: FC<BackupDataSectionProps> = ({ onImportBackup, onNotif
         <button
           type="button"
           onClick={handleExport}
-          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-100"
+          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle"
         >
-          <Download className="h-3.5 w-3.5 text-[#0F766E]" aria-hidden="true" />
+          <Download className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
           <span>Export Backup</span>
         </button>
         <button
           type="button"
           onClick={handleTriggerRestore}
-          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-100"
+          className="flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle"
         >
-          <Upload className="h-3.5 w-3.5 text-[#0F766E]" aria-hidden="true" />
+          <Upload className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
           <span>Restore Backup</span>
         </button>
       </div>
       {status ? (
-        <p className={`text-xs ${status.kind === "error" ? "text-red-700" : "text-[#0F766E]"}`}>
+        <p className={`text-xs ${status.kind === "error" ? "text-danger" : "text-accent"}`}>
           {status.message}
         </p>
       ) : null}
@@ -801,28 +908,28 @@ const ResetPhrasesSection: FC<ResetPhrasesSectionProps> = ({ onResetPhrases }) =
     <button
       type="button"
       onClick={startResetConfirm}
-      className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900"
+      className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
     >
       <RotateCcw className="h-4 w-4" aria-hidden="true" />
       <span>Reset phrase deck &amp; custom phrases</span>
     </button>
   ) : (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-3">
-      <p className="text-xs font-medium text-red-900">
+    <div className="rounded-xl border border-danger-border bg-danger-soft p-3">
+      <p className="text-xs font-medium text-danger-ink">
         Restore the default phrase deck and remove custom phrases?
       </p>
       <div className="mt-2.5 flex items-center gap-2">
         <button
           type="button"
           onClick={performReset}
-          className="min-h-[40px] flex-1 rounded-lg bg-red-700 px-3 text-xs font-medium text-white hover:bg-red-800"
+          className="min-h-[40px] flex-1 rounded-lg bg-danger px-3 text-xs font-medium text-accent-fg hover:bg-danger-hover"
         >
           Confirm Reset
         </button>
         <button
           type="button"
           onClick={cancelResetConfirm}
-          className="min-h-[40px] flex-1 rounded-lg border border-stone-200 bg-white px-3 text-xs font-medium text-stone-700 hover:bg-stone-50"
+          className="min-h-[40px] flex-1 rounded-lg border border-border bg-surface px-3 text-xs font-medium text-ink-secondary hover:bg-surface-subtle"
         >
           Cancel
         </button>
@@ -917,6 +1024,13 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
     [onUpdateSettings],
   );
 
+  const handleSelectTheme = useCallback(
+    (theme: ThemePreference) => {
+      onUpdateSettings({ theme });
+    },
+    [onUpdateSettings],
+  );
+
   const handlePreviewRegion = useCallback(
     (region: DialectRegion) => {
       void audioService.speakWithSettings(getRegionalSampleText(region), region, settings);
@@ -990,21 +1104,21 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
         tabIndex={-1}
         aria-label="Close settings backdrop"
         onClick={onClose}
-        className="fixed inset-0 bg-black/40 backdrop-blur-xs"
+        className="fixed inset-0 bg-backdrop backdrop-blur-xs"
       />
 
-      <div className="pb-safe-modal relative z-10 max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-6 shadow-xl sm:rounded-2xl sm:pb-6">
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-stone-200 sm:hidden" />
+      <div className="pb-safe-modal relative z-10 max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-surface p-6 shadow-xl sm:rounded-2xl sm:pb-6">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border sm:hidden" />
 
-        <div className="flex items-center justify-between gap-4 border-b border-stone-100 pb-4">
-          <h2 id={titleId} className="font-display text-lg font-semibold text-stone-900">
-            Dialect & Vietnamese Audio
+        <div className="flex items-center justify-between gap-4 border-b border-border-subtle pb-4">
+          <h2 id={titleId} className="font-display text-lg font-semibold text-ink">
+            Dialect &amp; Vietnamese Audio
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close settings"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
           >
             <X className="h-5 w-5" />
           </button>
@@ -1012,8 +1126,28 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
 
         <div className="mt-5 space-y-6">
           <div>
-            <p className="text-sm font-medium text-stone-900">Vietnamese Dialect Region</p>
-            <p className="mt-0.5 text-xs text-stone-500">
+            <p className="text-sm font-medium text-ink">Appearance</p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Choose light, dark, or match your device&apos;s system color scheme.
+            </p>
+            <div className="mt-2.5 flex items-center gap-1 rounded-xl bg-surface-subtle p-1">
+              {THEME_OPTIONS.map((option) => (
+                <ThemeOptionButton
+                  key={option.id}
+                  id={option.id}
+                  label={option.label}
+                  active={settings.theme === option.id}
+                  onSelect={handleSelectTheme}
+                />
+              ))}
+            </div>
+          </div>
+
+          <hr className="border-border-subtle" />
+
+          <div>
+            <p className="text-sm font-medium text-ink">Vietnamese Dialect Region</p>
+            <p className="mt-0.5 text-xs text-ink-muted">
               Tap a speaker icon to compare Northern, Central, and Southern pronunciation.
             </p>
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1031,23 +1165,23 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
                 />
               ))}
             </div>
-            <p className="mt-2.5 text-xs leading-relaxed text-stone-600">
+            <p className="mt-2.5 text-xs leading-relaxed text-ink-secondary">
               {DIALECT_META[settings.region].accentHint}
             </p>
           </div>
 
-          <hr className="border-stone-100" />
+          <hr className="border-border-subtle" />
 
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
-                <p className="text-sm font-medium text-stone-900">Vietnamese Speech Voice</p>
-                <p className="text-xs text-stone-500">{voiceStatusCopy}</p>
+                <p className="text-sm font-medium text-ink">Vietnamese Speech Voice</p>
+                <p className="text-xs text-ink-muted">{voiceStatusCopy}</p>
               </div>
               <button
                 type="button"
                 onClick={handleTestVoice}
-                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-[#0F766E] hover:bg-[#0F766E]/10"
+                className="flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-accent hover:bg-accent-soft"
               >
                 <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>Test {DIALECT_META[settings.region].label}</span>
@@ -1060,12 +1194,12 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
                 onClick={selectCloudSource}
                 className={`rounded-xl border p-3 text-left transition-colors ${
                   settings.ttsSource === "cloud-first"
-                    ? "border-[#0F766E] bg-[#0F766E]/5"
-                    : "border-stone-200 bg-white hover:bg-stone-50"
+                    ? "border-accent bg-accent-muted"
+                    : "border-border bg-surface hover:bg-surface-subtle"
                 }`}
               >
-                <p className="text-xs font-semibold text-stone-900">Regional Vietnamese Voice</p>
-                <p className="mt-0.5 text-[11px] text-stone-500">
+                <p className="text-xs font-semibold text-ink">Regional Vietnamese Voice</p>
+                <p className="mt-0.5 text-[11px] text-ink-muted">
                   Browser-ready Hanoi, Da Nang, and HCMC accents with automatic offline caching.
                 </p>
               </button>
@@ -1075,19 +1209,19 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
                 onClick={selectDeviceSource}
                 className={`rounded-xl border p-3 text-left transition-colors ${
                   settings.ttsSource === "device-only"
-                    ? "border-[#0F766E] bg-[#0F766E]/5"
-                    : "border-stone-200 bg-white hover:bg-stone-50"
+                    ? "border-accent bg-accent-muted"
+                    : "border-border bg-surface hover:bg-surface-subtle"
                 }`}
               >
-                <p className="text-xs font-semibold text-stone-900">On-Device Vietnamese Only</p>
-                <p className="mt-0.5 text-[11px] text-stone-500">
+                <p className="text-xs font-semibold text-ink">On-Device Vietnamese Only</p>
+                <p className="mt-0.5 text-[11px] text-ink-muted">
                   Uses only installed browser/OS Vietnamese voices (no TTS server requests).
                 </p>
               </button>
             </div>
 
             <div>
-              <p className="text-xs font-medium text-stone-700">Speaker Style</p>
+              <p className="text-xs font-medium text-ink-secondary">Speaker Style</p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {VOICE_PROFILES.map((profile) => (
                   <VoiceProfileButton
@@ -1101,9 +1235,9 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
             </div>
 
             {speakingState.audioError ? (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="flex items-start gap-2 rounded-xl border border-warning-border bg-warning-soft px-3 py-2 text-xs text-warning-ink">
                 <AlertCircle
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700"
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning"
                   aria-hidden="true"
                 />
                 <span>{speakingState.audioError}</span>
@@ -1111,12 +1245,12 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
             ) : null}
           </div>
 
-          <hr className="border-stone-100" />
+          <hr className="border-border-subtle" />
 
           <label className="flex min-h-[44px] cursor-pointer items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-stone-900">Auto-read English → Vietnamese</p>
-              <p className="text-xs text-stone-500">
+              <p className="text-sm font-medium text-ink">Auto-read English → Vietnamese</p>
+              <p className="text-xs text-ink-muted">
                 Speaks English then Vietnamese automatically when moving to the next card.
               </p>
             </div>
@@ -1124,11 +1258,11 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
               type="checkbox"
               checked={settings.autoPlayBoth}
               onChange={handleAutoPlayChange}
-              className="h-5 w-5 accent-[#0F766E]"
+              className="h-5 w-5 accent-accent"
             />
           </label>
 
-          <hr className="border-stone-100" />
+          <hr className="border-border-subtle" />
 
           <VoiceFallbackSection
             voiceSelectId={voiceSelectId}
@@ -1137,7 +1271,7 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
             onVoiceChange={handleVoiceChange}
           />
 
-          <hr className="border-stone-100" />
+          <hr className="border-border-subtle" />
 
           <div ref={audioPackRef}>
             <OfflineAudioPackCard
@@ -1150,7 +1284,7 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
             />
           </div>
 
-          <hr className="border-stone-100" />
+          <hr className="border-border-subtle" />
 
           <div className="space-y-3">
             <PWAInstallButton variant="full" />
@@ -1160,11 +1294,11 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
               <button
                 type="button"
                 onClick={openPrivacyModal}
-                className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-[#0F766E]"
+                className="text-xs text-ink-muted underline decoration-border-strong underline-offset-4 hover:text-accent"
               >
                 Privacy Policy &amp; Offline Data
               </button>
-              <p className="text-[11px] text-stone-400">Nói v1.0.0 · Spoken Vietnamese</p>
+              <p className="text-[11px] text-ink-faint">Nói v1.0.0 · Spoken Vietnamese</p>
             </div>
           </div>
         </div>
@@ -1172,56 +1306,53 @@ const SettingsModalContent: FC<SettingsModalContentProps> = ({
 
       {showPrivacyModal ? (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-xs sm:items-center sm:p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-backdrop p-0 backdrop-blur-xs sm:items-center sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby={privacyTitleId}
         >
-          <div className="pb-safe-modal max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6 shadow-xl sm:rounded-2xl sm:pb-6">
-            <div className="flex items-start justify-between gap-4 border-b border-stone-100 pb-3">
-              <h3
-                id={privacyTitleId}
-                className="font-display text-base font-semibold text-stone-900"
-              >
+          <div className="pb-safe-modal max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-surface p-6 shadow-xl sm:rounded-2xl sm:pb-6">
+            <div className="flex items-start justify-between gap-4 border-b border-border-subtle pb-3">
+              <h3 id={privacyTitleId} className="font-display text-base font-semibold text-ink">
                 Privacy Policy &amp; Offline Data
               </h3>
               <button
                 type="button"
                 onClick={closePrivacyModal}
                 aria-label="Close privacy policy"
-                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-stone-500 hover:bg-stone-100"
+                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg text-ink-muted hover:bg-surface-subtle"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-3 space-y-3 text-xs leading-relaxed text-stone-600">
+            <div className="mt-3 space-y-3 text-xs leading-relaxed text-ink-secondary">
               <p>
                 Nói stores your saved phrases, starred words, custom phrases, dialect settings, and
                 downloaded offline audio clips locally on your device. No account is required, and
                 Nói contains no ads or third-party tracking.
               </p>
               <p>
-                <strong className="text-stone-800">Microphone permission:</strong> Only used when
-                you tap Tap to Speak in Pronunciation Practice. Offline Tone Coach analyzes audio
-                locally on your device and never uploads recordings. Optional Online Speech
-                Recognition uses your device&apos;s built-in speech service.
+                <strong className="text-ink">Microphone permission:</strong> Only used when you tap
+                Tap to Speak in Pronunciation Practice. Offline Tone Coach analyzes audio locally on
+                your device and never uploads recordings. Optional Online Speech Recognition uses
+                your device&apos;s built-in speech service.
               </p>
               <p>
-                <strong className="text-stone-800">Regional Voice TTS:</strong> When Regional
-                Vietnamese Voice is enabled and a clip is not yet cached, only the phrase text,
-                dialect region, and speaker style are sent to synthesize audio. Switch to On-Device
-                Vietnamese Only in Settings to disable all TTS network requests.
+                <strong className="text-ink">Regional Voice TTS:</strong> When Regional Vietnamese
+                Voice is enabled and a clip is not yet cached, only the phrase text, dialect region,
+                and speaker style are sent to synthesize audio. Switch to On-Device Vietnamese Only
+                in Settings to disable all TTS network requests.
               </p>
               <p>
-                <strong className="text-stone-800">Data deletion &amp; contact:</strong> Reset your
-                deck anytime in Settings or clear app storage in Android Settings. Privacy
-                questions: wiltermoodj@gmail.com.
+                <strong className="text-ink">Data deletion &amp; contact:</strong> Reset your deck
+                anytime in Settings or clear app storage in Android Settings. Privacy questions:
+                wiltermoodj@gmail.com.
               </p>
             </div>
             <button
               type="button"
               onClick={closePrivacyModal}
-              className="mt-5 min-h-[44px] w-full rounded-xl bg-stone-900 text-xs font-medium text-white hover:bg-stone-800"
+              className="mt-5 min-h-[44px] w-full rounded-xl bg-surface-inverse text-xs font-medium text-ink-inverse hover:opacity-90"
             >
               Close
             </button>

@@ -1,9 +1,5 @@
 import { createIdentityTimelineMap, type StretchTimelineMap } from "./audio/speechSegmentation";
-import {
-  type StretchAudioOptions,
-  type StretchedAudioResult,
-  stretchAudioChannelsWithMap,
-} from "./audioTimeStretch";
+import type { StretchAudioOptions, StretchedAudioResult } from "./audioTimeStretch";
 
 interface WorkerResultMessage {
   id: number;
@@ -27,6 +23,28 @@ let workerDisabledUntil = 0;
 let nextJobId = 1;
 const pendingJobs = new Map<number, PendingJob>();
 
+interface FallbackStretchModule {
+  stretchAudioChannelsWithMap: (
+    channels: Float32Array[],
+    sampleRate: number,
+    speedFactor: number,
+    options?: StretchAudioOptions,
+  ) => StretchedAudioResult;
+}
+
+let fallbackModulePromise: Promise<FallbackStretchModule> | null = null;
+
+async function runMainThreadFallback(
+  channels: Float32Array[],
+  sampleRate: number,
+  speedFactor: number,
+  options?: StretchAudioOptions,
+): Promise<StretchedAudioResult> {
+  fallbackModulePromise ??= import("./audioTimeStretch");
+  const mod = await fallbackModulePromise;
+  return mod.stretchAudioChannelsWithMap(channels, sampleRate, speedFactor, options);
+}
+
 function isWorkerTemporarilyDisabled(): boolean {
   if (workerDisabledUntil <= 0) return false;
   if (Date.now() >= workerDisabledUntil) {
@@ -45,10 +63,11 @@ function recordWorkerFailure(): void {
 }
 
 function rejectAllPending(reason: Error): void {
-  for (const job of pendingJobs.values()) {
+  const jobs = [...pendingJobs.values()];
+  pendingJobs.clear();
+  for (const job of jobs) {
     job.reject(reason);
   }
-  pendingJobs.clear();
 }
 
 function resetSharedWorker(): void {
@@ -60,6 +79,13 @@ function resetSharedWorker(): void {
     }
     sharedWorker = null;
   }
+}
+
+export function resetAudioTimeStretchWorkerForTests(): void {
+  resetSharedWorker();
+  rejectAllPending(new Error("Audio time-stretch worker reset."));
+  consecutiveWorkerErrors = 0;
+  workerDisabledUntil = 0;
 }
 
 function getOrCreateWorker(): Worker | null {
@@ -108,17 +134,23 @@ export async function stretchAudioChannelsWithMapAsync(
   timeoutMs = WORKER_JOB_TIMEOUT_MS,
   options?: StretchAudioOptions,
 ): Promise<StretchedAudioResult> {
-  if (
-    channels.length === 0 ||
-    speedFactor >= 0.99 ||
-    (options?.baseClipIsSlow === true && speedFactor >= 0.68)
-  ) {
-    return stretchAudioChannelsWithMap(channels, sampleRate, speedFactor, options);
+  if (channels.length === 0) {
+    return { channels: [], timeline: createIdentityTimelineMap(0) };
+  }
+  const first = channels[0];
+  if (!first || first.length === 0 || speedFactor >= 0.99 || first.length < 32) {
+    return {
+      channels: channels.map((ch) => new Float32Array(ch)),
+      timeline: createIdentityTimelineMap(first?.length ?? 0),
+    };
+  }
+  if (options?.baseClipIsSlow === true && speedFactor >= 0.68) {
+    return runMainThreadFallback(channels, sampleRate, speedFactor, options);
   }
 
   const worker = getOrCreateWorker();
   if (!worker) {
-    return stretchAudioChannelsWithMap(channels, sampleRate, speedFactor, options);
+    return runMainThreadFallback(channels, sampleRate, speedFactor, options);
   }
 
   const clonedChannels = channels.map((ch) => new Float32Array(ch));
@@ -147,10 +179,10 @@ export async function stretchAudioChannelsWithMapAsync(
 
       timerId = setTimeout(() => {
         if (!pendingJobs.has(id)) return;
-        pendingJobs.delete(id);
+        const timeoutErr = new Error("Audio time-stretch worker timed out.");
         recordWorkerFailure();
         resetSharedWorker();
-        reject(new Error("Audio time-stretch worker timed out."));
+        rejectAllPending(timeoutErr);
       }, timeoutMs);
 
       const transfers: Transferable[] = clonedChannels.map((ch) => ch.buffer);
@@ -181,7 +213,7 @@ export async function stretchAudioChannelsWithMapAsync(
       }
     });
   } catch {
-    return stretchAudioChannelsWithMap(channels, sampleRate, speedFactor, options);
+    return runMainThreadFallback(channels, sampleRate, speedFactor, options);
   }
 }
 

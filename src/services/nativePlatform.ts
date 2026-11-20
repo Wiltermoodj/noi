@@ -78,13 +78,22 @@ export function registerBackHandler(handler: () => boolean): () => void {
   };
 }
 
+export function syncNativeStatusBarTheme(isDark: boolean): void {
+  if (!isNativeAndroid()) {
+    return;
+  }
+  void StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light }).catch(() => undefined);
+}
+
 export async function initializeNativeShell(onBackPressed?: () => boolean): Promise<() => void> {
   if (!isNativePlatform()) {
     return () => undefined;
   }
 
   if (isNativeAndroid()) {
-    void StatusBar.setStyle({ style: Style.Light }).catch(() => undefined);
+    const isDark =
+      typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+    syncNativeStatusBarTheme(isDark);
   }
 
   void SplashScreen.hide().catch(() => undefined);

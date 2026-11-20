@@ -71,19 +71,22 @@ describe("Offline acoustic pitch & syllable practice engine", () => {
     vi.restoreAllMocks();
   });
 
-  it("detects fundamental pitch frequency from a periodic sine signal", () => {
-    const sampleRate = 44100;
-    const freq = 180;
-    const buffer = new Float32Array(2048);
-    for (let i = 0; i < buffer.length; i++) {
-      buffer[i] = 0.25 * Math.sin((2 * Math.PI * freq * i) / sampleRate);
+  it("detects fundamental pitch frequency accurately across human voice range and rejects silence", () => {
+    const sampleRate = 48000;
+    for (const freq of [92, 145, 180, 240, 340]) {
+      const buffer = new Float32Array(2048);
+      for (let i = 0; i < buffer.length; i++) {
+        buffer[i] = 0.25 * Math.sin((2 * Math.PI * freq * i) / sampleRate);
+      }
+
+      const detected = detectPitchHz(buffer, sampleRate);
+      expect(detected).not.toBeNull();
+      if (detected !== null) {
+        expect(Math.abs(detected - freq)).toBeLessThan(6);
+      }
     }
 
-    const detected = detectPitchHz(buffer, sampleRate);
-    expect(detected).not.toBeNull();
-    if (detected !== null) {
-      expect(Math.abs(detected - freq)).toBeLessThan(5);
-    }
+    expect(detectPitchHz(new Float32Array(2048), sampleRate)).toBeNull();
   });
 
   it("segments voiced syllable bursts separated by silent pauses", () => {

@@ -57,6 +57,88 @@ function hasRegionalDifference(north: string, central: string, south: string): b
   return n !== c || n !== s || c !== s;
 }
 
+const phraseRegionalDiffCache = new WeakMap<Phrase, boolean>();
+
+function getPhraseHasRegionalDiff(phrase: Phrase): boolean {
+  const cached = phraseRegionalDiffCache.get(phrase);
+  if (cached !== undefined) return cached;
+  const diff = hasRegionalDifference(phrase.north, phrase.central, phrase.south);
+  phraseRegionalDiffCache.set(phrase, diff);
+  return diff;
+}
+
+interface CachedWordBookEntry {
+  north: string;
+  central: string;
+  south: string;
+  phoneticNorth: string;
+  phoneticCentral: string;
+  phoneticSouth: string;
+  topicLabel: string;
+  hasRegionalDiff: boolean;
+  aliases: string[];
+  searchHaystack: string;
+}
+
+const wordBookEntryCache = new WeakMap<DictEntry, CachedWordBookEntry>();
+
+function getCachedWordBookEntry(entry: DictEntry): CachedWordBookEntry {
+  const cached = wordBookEntryCache.get(entry);
+  if (cached) return cached;
+
+  const north = getDictionaryEntryText(entry, "north");
+  const central = getDictionaryEntryText(entry, "central");
+  const south = getDictionaryEntryText(entry, "south");
+  const phoneticNorth = approximateVietnamesePhonetic(north, "north");
+  const phoneticCentral = approximateVietnamesePhonetic(central, "central");
+  const phoneticSouth = approximateVietnamesePhonetic(south, "south");
+  const topicLabel = PART_OF_SPEECH_LABELS[entry.partOfSpeech];
+  const aliases = entry.aliases ?? [];
+  const searchHaystack = [
+    entry.en,
+    north,
+    central,
+    south,
+    phoneticNorth,
+    phoneticCentral,
+    phoneticSouth,
+    entry.note,
+    topicLabel,
+    ...aliases,
+  ]
+    .map((field) => (field ? normalizeText(field) : ""))
+    .filter(Boolean)
+    .join(" ");
+
+  const computed: CachedWordBookEntry = {
+    north,
+    central,
+    south,
+    phoneticNorth,
+    phoneticCentral,
+    phoneticSouth,
+    topicLabel,
+    hasRegionalDiff: hasRegionalDifference(north, central, south),
+    aliases,
+    searchHaystack,
+  };
+  wordBookEntryCache.set(entry, computed);
+  return computed;
+}
+
+const dictionaryEntryMapCache = new WeakMap<DictEntry[], Map<string, DictEntry>>();
+
+function getDictionaryEntryMap(dictionaryEntries: DictEntry[]): Map<string, DictEntry> {
+  const cached = dictionaryEntryMapCache.get(dictionaryEntries);
+  if (cached) return cached;
+  const entryMap = new Map<string, DictEntry>();
+  for (const entry of dictionaryEntries) {
+    entryMap.set(entry.id, entry);
+  }
+  dictionaryEntryMapCache.set(dictionaryEntries, entryMap);
+  return entryMap;
+}
+
 export function buildPersonalPhrasebook(
   phrases: Phrase[],
   starredWords: StarredWordRecord[],
@@ -84,41 +166,36 @@ export function buildPersonalPhrasebook(
       priority: phrase.priority,
       isCustom: Boolean(phrase.isCustom),
       starredAt: phrase.starredAt ?? 0,
-      hasRegionalDiff: hasRegionalDifference(phrase.north, phrase.central, phrase.south),
+      hasRegionalDiff: getPhraseHasRegionalDiff(phrase),
       aliases: [],
       phrase,
     });
   }
 
-  const entryMap = new Map<string, DictEntry>();
-  for (const entry of dictionaryEntries) {
-    entryMap.set(entry.id, entry);
-  }
+  const entryMap = getDictionaryEntryMap(dictionaryEntries);
 
   for (const record of starredWords) {
     const entry = entryMap.get(record.entryId);
     if (!entry) continue;
-    const north = getDictionaryEntryText(entry, "north");
-    const central = getDictionaryEntryText(entry, "central");
-    const south = getDictionaryEntryText(entry, "south");
+    const meta = getCachedWordBookEntry(entry);
     items.push({
       uid: `word:${entry.id}`,
       id: entry.id,
       kind: "word",
       english: entry.en,
-      north,
-      central,
-      south,
-      phoneticNorth: approximateVietnamesePhonetic(north, "north"),
-      phoneticCentral: approximateVietnamesePhonetic(central, "central"),
-      phoneticSouth: approximateVietnamesePhonetic(south, "south"),
+      north: meta.north,
+      central: meta.central,
+      south: meta.south,
+      phoneticNorth: meta.phoneticNorth,
+      phoneticCentral: meta.phoneticCentral,
+      phoneticSouth: meta.phoneticSouth,
       topicKey: entry.partOfSpeech,
-      topicLabel: PART_OF_SPEECH_LABELS[entry.partOfSpeech],
+      topicLabel: meta.topicLabel,
       note: entry.note,
       isCustom: false,
       starredAt: record.starredAt,
-      hasRegionalDiff: hasRegionalDifference(north, central, south),
-      aliases: entry.aliases ?? [],
+      hasRegionalDiff: meta.hasRegionalDiff,
+      aliases: meta.aliases,
       entry,
     });
   }
@@ -153,15 +230,66 @@ function tokenizeSearchQuery(query: string): string[] {
   return normalized.split(" ").filter(Boolean);
 }
 
-function matchesSearchTokens(
-  fields: readonly (string | undefined)[],
-  tokens: readonly string[],
-): boolean {
-  if (tokens.length === 0) return true;
-  const haystack = fields
+const phraseHaystackCache = new WeakMap<Phrase, string>();
+const phrasebookItemHaystackCache = new WeakMap<PhrasebookItem, string>();
+
+function getPhraseSearchHaystack(phrase: Phrase): string {
+  const cached = phraseHaystackCache.get(phrase);
+  if (cached !== undefined) return cached;
+
+  const haystack = [
+    phrase.english,
+    phrase.north,
+    phrase.central,
+    phrase.south,
+    phrase.phoneticNorth,
+    phrase.phoneticCentral,
+    phrase.phoneticSouth,
+    phrase.streetNote,
+    phrase.textbook,
+    phrase.category,
+  ]
     .map((field) => (field ? normalizeText(field) : ""))
     .filter(Boolean)
     .join(" ");
+
+  phraseHaystackCache.set(phrase, haystack);
+  return haystack;
+}
+
+function getPhrasebookItemSearchHaystack(item: PhrasebookItem): string {
+  if (item.entry) {
+    return getCachedWordBookEntry(item.entry).searchHaystack;
+  }
+  if (item.phrase && item.aliases.length === 0) {
+    return getPhraseSearchHaystack(item.phrase);
+  }
+  const cached = phrasebookItemHaystackCache.get(item);
+  if (cached !== undefined) return cached;
+
+  const haystack = [
+    item.english,
+    item.north,
+    item.central,
+    item.south,
+    item.phoneticNorth,
+    item.phoneticCentral,
+    item.phoneticSouth,
+    item.note,
+    item.textbook,
+    item.topicLabel,
+    ...item.aliases,
+  ]
+    .map((field) => (field ? normalizeText(field) : ""))
+    .filter(Boolean)
+    .join(" ");
+
+  phrasebookItemHaystackCache.set(item, haystack);
+  return haystack;
+}
+
+function haystackMatchesTokens(haystack: string, tokens: readonly string[]): boolean {
+  if (tokens.length === 0) return true;
   if (!haystack) return false;
   return tokens.every((token) => haystack.includes(token));
 }
@@ -169,21 +297,7 @@ function matchesSearchTokens(
 export function matchesPhraseKeywordSearch(phrase: Phrase, query: string): boolean {
   const tokens = tokenizeSearchQuery(query);
   if (tokens.length === 0) return true;
-  return matchesSearchTokens(
-    [
-      phrase.english,
-      phrase.north,
-      phrase.central,
-      phrase.south,
-      phrase.phoneticNorth,
-      phrase.phoneticCentral,
-      phrase.phoneticSouth,
-      phrase.streetNote,
-      phrase.textbook,
-      phrase.category,
-    ],
-    tokens,
-  );
+  return haystackMatchesTokens(getPhraseSearchHaystack(phrase), tokens);
 }
 
 export function filterPhrases(phrases: Phrase[], filters: PhraseFilters): Phrase[] {
@@ -193,42 +307,13 @@ export function filterPhrases(phrases: Phrase[], filters: PhraseFilters): Phrase
     if (filters.category !== "All" && phrase.category !== filters.category) return false;
     if (filters.priority !== "all" && phrase.priority !== filters.priority) return false;
     if (tokens.length === 0) return true;
-    return matchesSearchTokens(
-      [
-        phrase.english,
-        phrase.north,
-        phrase.central,
-        phrase.south,
-        phrase.phoneticNorth,
-        phrase.phoneticCentral,
-        phrase.phoneticSouth,
-        phrase.streetNote,
-        phrase.textbook,
-        phrase.category,
-      ],
-      tokens,
-    );
+    return haystackMatchesTokens(getPhraseSearchHaystack(phrase), tokens);
   });
 }
 
 function matchesSearchQuery(item: PhrasebookItem, tokens: readonly string[]): boolean {
   if (tokens.length === 0) return true;
-  return matchesSearchTokens(
-    [
-      item.english,
-      item.north,
-      item.central,
-      item.south,
-      item.phoneticNorth,
-      item.phoneticCentral,
-      item.phoneticSouth,
-      item.note,
-      item.textbook,
-      item.topicLabel,
-      ...item.aliases,
-    ],
-    tokens,
-  );
+  return haystackMatchesTokens(getPhrasebookItemSearchHaystack(item), tokens);
 }
 
 function matchesPriorityFilter(item: PhrasebookItem, priority: PhrasebookPriorityFilter): boolean {

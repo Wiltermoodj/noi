@@ -1,5 +1,9 @@
+import { createWriteStream } from "node:fs";
 import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { fileURLToPath } from "node:url";
 import * as ort from "onnxruntime-node";
 import { conditionTtsWav } from "../services/wavPostProcess.ts";
@@ -13,10 +17,37 @@ const KOKORO_MODEL_FILENAME = "kokoro_vi_lite.onnx";
 const MIN_MODEL_BYTES = 1_000_000;
 const KOKORO_SAMPLE_RATE = 24_000;
 const CLAUSE_PAUSE_SAMPLES = Math.round(KOKORO_SAMPLE_RATE * 0.14);
+const MODEL_DOWNLOAD_COOLDOWN_MS = 60_000;
 
 let cachedSessionPromise: Promise<ort.InferenceSession> | null = null;
 let activeModelDownload: Promise<string> | null = null;
 let cachedModelPath: string | null = null;
+let modelDownloadFailedUntil = 0;
+let lastModelDownloadErrorMessage: string | null = null;
+let inferenceQueueTail: Promise<void> = Promise.resolve();
+
+async function runSerializedInference<T>(deadline: number, task: () => Promise<T>): Promise<T> {
+  const previous = inferenceQueueTail;
+  let releaseCurrent: (() => void) | undefined;
+  inferenceQueueTail = new Promise<void>((resolve) => {
+    releaseCurrent = resolve;
+  });
+
+  await previous;
+  try {
+    if (Date.now() > deadline) {
+      throw new Error("Kokoro regional Vietnamese TTS timed out while queued for synthesis.");
+    }
+    return await task();
+  } finally {
+    releaseCurrent?.();
+  }
+}
+
+export function resetKokoroModelCooldown(): void {
+  modelDownloadFailedUntil = 0;
+  lastModelDownloadErrorMessage = null;
+}
 
 function resolveModelDirectory(modelDir?: string): string {
   if (modelDir && modelDir.trim().length > 0) {
@@ -61,15 +92,29 @@ async function downloadModelFile(targetPath: string, timeoutMs: number): Promise
         `Failed to download Kokoro Vietnamese model (HTTP ${String(response.status)}).`,
       );
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length < MIN_MODEL_BYTES) {
-      throw new Error("Downloaded Kokoro Vietnamese model was unexpectedly truncated.");
+    if (response.body) {
+      const readable = Readable.fromWeb(response.body as WebReadableStream<Uint8Array>);
+      await pipeline(readable, createWriteStream(tmpPath));
+      const info = await stat(tmpPath);
+      if (info.size < MIN_MODEL_BYTES) {
+        throw new Error("Downloaded Kokoro Vietnamese model was unexpectedly truncated.");
+      }
+    } else {
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length < MIN_MODEL_BYTES) {
+        throw new Error("Downloaded Kokoro Vietnamese model was unexpectedly truncated.");
+      }
+      await writeFile(tmpPath, bytes);
     }
-    await writeFile(tmpPath, bytes);
     await rename(tmpPath, targetPath);
+    modelDownloadFailedUntil = 0;
+    lastModelDownloadErrorMessage = null;
     return targetPath;
   } catch (err) {
     await unlink(tmpPath).catch(() => undefined);
+    modelDownloadFailedUntil = Date.now() + MODEL_DOWNLOAD_COOLDOWN_MS;
+    lastModelDownloadErrorMessage =
+      err instanceof Error ? err.message : "Failed to download Kokoro Vietnamese model.";
     throw err;
   } finally {
     clearTimeout(timerId);
@@ -86,6 +131,12 @@ async function ensureKokoroModelPath(
   }
   if (activeModelDownload) {
     return activeModelDownload;
+  }
+  if (Date.now() < modelDownloadFailedUntil) {
+    throw new Error(
+      lastModelDownloadErrorMessage ??
+        "Kokoro Vietnamese model download is temporarily in cooldown after a recent failure.",
+    );
   }
   activeModelDownload = downloadModelFile(targetPath, timeoutMs).finally(() => {
     activeModelDownload = null;
@@ -201,6 +252,7 @@ export async function synthesizeKokoroRegionalVietnameseTts(
     throw new Error("Text is required for Vietnamese speech synthesis.");
   }
 
+  const deadline = Date.now() + Math.max(1_000, timeoutMs);
   const session = await getKokoroSession(modelDir, timeoutMs);
   const voiceId = selectKokoroVoiceId(voiceProfile);
   const speedValue = slow ? 0.78 : 0.96;
@@ -209,16 +261,21 @@ export async function synthesizeKokoroRegionalVietnameseTts(
 
   const waveforms: Float32Array[] = [];
   for (const chunk of chunks) {
+    if (Date.now() > deadline) {
+      throw new Error("Kokoro regional Vietnamese TTS timed out during synthesis.");
+    }
     const inputIds = new ort.Tensor(
       "int64",
       BigInt64Array.from(chunk.tokens, (id) => BigInt(id)),
       [1, chunk.tokens.length],
     );
-    const outputs = await session.run({
-      input_ids: inputIds,
-      speed: speedTensor,
-      voice: voiceTensor,
-    });
+    const outputs = await runSerializedInference(deadline, async () =>
+      session.run({
+        input_ids: inputIds,
+        speed: speedTensor,
+        voice: voiceTensor,
+      }),
+    );
     const waveformTensor = outputs["waveform"];
     if (!waveformTensor || !(waveformTensor.data instanceof Float32Array)) {
       throw new Error("Kokoro regional Vietnamese TTS returned an unexpected tensor payload.");

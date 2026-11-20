@@ -12,10 +12,11 @@ import {
   Volume2,
 } from "lucide-react";
 import type { FC, TouchEvent } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useSpeakingStatus } from "../hooks/useSpeakingStatus";
 import { audioService, type SpeakingStatus } from "../services/audioService";
+import { shouldUseNativeSlowClip } from "../services/playbackPacing";
 import { getPhrasePhonetic, getPhraseText } from "../services/storageService";
 import { playVietnameseToneContour } from "../services/toneAudioService";
 import {
@@ -28,8 +29,8 @@ import {
   type PhraseCategory,
 } from "../types/vietnamese";
 import { AudioErrorBanner } from "./AudioErrorBanner";
+import { LazyPracticePanel } from "./LazyPracticePanel";
 import { PlaybackSpeedSlider } from "./PlaybackSpeedSlider";
-import { PracticePanel } from "./PracticePanel";
 import { PronunciationTipsCard } from "./PronunciationTipsCard";
 import { RegionIcon } from "./RegionIcon";
 
@@ -114,7 +115,7 @@ interface RegionCompareRowProps {
   onSpeakOnly: (region: DialectRegion, text: string) => void;
 }
 
-const RegionCompareRow: FC<RegionCompareRowProps> = ({
+const RegionCompareRowBase: FC<RegionCompareRowProps> = ({
   region,
   active,
   isPlayingRegion,
@@ -139,18 +140,18 @@ const RegionCompareRow: FC<RegionCompareRowProps> = ({
       <button type="button" onClick={handleRowClick} className="min-w-0 flex-1 text-left">
         <div className="flex items-center gap-2 text-xs">
           <RegionIcon region={region} className="h-5 w-5" />
-          <span className={`font-semibold ${active ? "text-[#0F766E]" : "text-stone-700"}`}>
+          <span className={`font-semibold ${active ? "text-accent" : "text-ink-secondary"}`}>
             {meta.label}
           </span>
-          <span aria-hidden="true" className="text-stone-300">
+          <span aria-hidden="true" className="text-border-strong">
             ·
           </span>
-          <span className="text-stone-500">{meta.cities}</span>
+          <span className="text-ink-muted">{meta.cities}</span>
         </div>
-        <p className={`mt-1 text-sm font-medium ${active ? "text-stone-900" : "text-stone-700"}`}>
+        <p className={`mt-1 text-sm font-medium ${active ? "text-ink" : "text-ink-secondary"}`}>
           {text}
         </p>
-        <p className="mt-0.5 text-xs italic text-[#0F766E]/85">{phonetic}</p>
+        <p className="mt-0.5 text-xs italic text-accent">{phonetic}</p>
       </button>
 
       <button
@@ -159,10 +160,10 @@ const RegionCompareRow: FC<RegionCompareRowProps> = ({
         onClick={handleSpeakerClick}
         className={`flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl transition-colors ${
           isPlayingRegion || isLoadingRegion
-            ? "bg-[#0F766E] text-white"
+            ? "bg-accent text-accent-fg"
             : active
-              ? "bg-[#0F766E]/10 text-[#0F766E] hover:bg-[#0F766E]/20"
-              : "text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+              ? "bg-accent-soft text-accent hover:bg-accent-muted"
+              : "text-ink-muted hover:bg-surface-muted hover:text-ink"
         }`}
       >
         {isLoadingRegion ? (
@@ -175,6 +176,8 @@ const RegionCompareRow: FC<RegionCompareRowProps> = ({
   );
 };
 
+const RegionCompareRow = memo(RegionCompareRowBase);
+
 interface StudyQueueRowProps {
   phrase: Phrase;
   index: number;
@@ -183,7 +186,13 @@ interface StudyQueueRowProps {
   onJump: (index: number) => void;
 }
 
-const StudyQueueRow: FC<StudyQueueRowProps> = ({ phrase, index, region, isCurrent, onJump }) => {
+const StudyQueueRowBase: FC<StudyQueueRowProps> = ({
+  phrase,
+  index,
+  region,
+  isCurrent,
+  onJump,
+}) => {
   const handleClick = useCallback(() => {
     onJump(index);
   }, [index, onJump]);
@@ -193,19 +202,21 @@ const StudyQueueRow: FC<StudyQueueRowProps> = ({ phrase, index, region, isCurren
       type="button"
       onClick={handleClick}
       className={`flex min-h-[52px] w-full items-center justify-between gap-3 py-2.5 text-left transition-colors ${
-        isCurrent ? "text-[#0F766E]" : "text-stone-700 hover:text-stone-900"
+        isCurrent ? "text-accent" : "text-ink-secondary hover:text-ink"
       }`}
     >
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{getPhraseText(phrase, region)}</p>
-        <p className="truncate text-xs text-stone-500">{phrase.english}</p>
+        <p className="truncate text-xs text-ink-muted">{phrase.english}</p>
       </div>
       {phrase.isStarred ? (
-        <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-500" aria-hidden="true" />
+        <Star className="h-3.5 w-3.5 shrink-0 fill-star-fill text-star" aria-hidden="true" />
       ) : null}
     </button>
   );
 };
+
+const StudyQueueRow = memo(StudyQueueRowBase);
 
 interface RegionMenuOptionProps {
   region: DialectRegion;
@@ -227,20 +238,18 @@ const RegionMenuOption: FC<RegionMenuOptionProps> = ({ region, selected, onSelec
       onClick={handleClick}
       className={`flex min-h-[44px] w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
         selected
-          ? "bg-[#0F766E]/10 font-semibold text-[#0F766E]"
-          : "text-stone-700 hover:bg-stone-50 hover:text-stone-900"
+          ? "bg-accent-soft font-semibold text-accent"
+          : "text-ink-secondary hover:bg-surface-subtle hover:text-ink"
       }`}
     >
       <span className="flex min-w-0 items-center gap-2.5">
         <RegionIcon region={region} className="h-7 w-7" />
         <span className="min-w-0">
           <span className="block">{meta.regionName}</span>
-          <span className="block text-[11px] font-normal text-stone-500">{meta.cities}</span>
+          <span className="block text-[11px] font-normal text-ink-muted">{meta.cities}</span>
         </span>
       </span>
-      {selected ? (
-        <Check className="h-3.5 w-3.5 shrink-0 text-[#0F766E]" aria-hidden="true" />
-      ) : null}
+      {selected ? <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" /> : null}
     </button>
   );
 };
@@ -265,14 +274,12 @@ const TopicMenuOption: FC<TopicMenuOptionProps> = ({ id, label, selected, onSele
       onClick={handleClick}
       className={`flex min-h-[38px] w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
         selected
-          ? "bg-[#0F766E]/10 font-semibold text-[#0F766E]"
-          : "text-stone-700 hover:bg-stone-50 hover:text-stone-900"
+          ? "bg-accent-soft font-semibold text-accent"
+          : "text-ink-secondary hover:bg-surface-subtle hover:text-ink"
       }`}
     >
       <span className="truncate">{label}</span>
-      {selected ? (
-        <Check className="h-3.5 w-3.5 shrink-0 text-[#0F766E]" aria-hidden="true" />
-      ) : null}
+      {selected ? <Check className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" /> : null}
     </button>
   );
 };
@@ -356,7 +363,7 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
     <div className="flex items-start justify-between gap-2">
       <div
         ref={menuContainerRef}
-        className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5 text-xs font-medium text-stone-500"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5 text-xs font-medium text-ink-muted"
       >
         <div className="relative">
           <button
@@ -367,7 +374,9 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
             aria-label={`Dialect region: ${regionName}. Click to change region.`}
             title={`${regionName} · ${regionMeta.cities}`}
             className={`-ml-1 inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-full p-1 transition-colors ${
-              openMenu === "region" ? "bg-stone-100 ring-2 ring-[#0F766E]/30" : "hover:bg-stone-100"
+              openMenu === "region"
+                ? "bg-surface-muted ring-2 ring-accent-border"
+                : "hover:bg-surface-muted"
             }`}
           >
             <RegionIcon region={region} className="h-7 w-7" />
@@ -377,7 +386,7 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
             <div
               role="menu"
               aria-label="Select dialect region"
-              className="absolute left-0 top-full z-20 mt-1 w-52 rounded-xl border border-stone-200 bg-white p-1.5 shadow-lg"
+              className="absolute left-0 top-full z-20 mt-1 w-52 rounded-xl border border-border bg-surface p-1.5 shadow-lg"
             >
               {DIALECT_REGIONS.map((item) => (
                 <RegionMenuOption
@@ -391,7 +400,7 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
           ) : null}
         </div>
 
-        <span aria-hidden="true" className="px-0.5 text-stone-300">
+        <span aria-hidden="true" className="px-0.5 text-border-strong">
           ·
         </span>
 
@@ -404,15 +413,15 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
             aria-label={`Situation: ${category}. Click to filter situations.`}
             className={`inline-flex min-h-[36px] items-center gap-1 whitespace-nowrap rounded-lg px-1.5 transition-colors ${
               openMenu === "topic"
-                ? "bg-stone-100 text-stone-900"
+                ? "bg-surface-muted text-ink"
                 : isTopicFiltered
-                  ? "text-[#0F766E] hover:bg-[#0F766E]/10"
-                  : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"
+                  ? "text-accent hover:bg-accent-soft"
+                  : "text-ink-secondary hover:bg-surface-muted hover:text-ink"
             }`}
           >
             <span>{category}</span>
             <ChevronDown
-              className={`h-3.5 w-3.5 ${isTopicFiltered ? "text-[#0F766E]" : "text-stone-400"}`}
+              className={`h-3.5 w-3.5 ${isTopicFiltered ? "text-accent" : "text-ink-faint"}`}
               aria-hidden="true"
             />
           </button>
@@ -421,7 +430,7 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
             <div
               role="menu"
               aria-label="Filter by situation"
-              className="absolute left-0 top-full z-20 mt-1 w-52 rounded-xl border border-stone-200 bg-white p-1.5 shadow-lg"
+              className="absolute left-0 top-full z-20 mt-1 w-52 rounded-xl border border-border bg-surface p-1.5 shadow-lg"
             >
               {TOPIC_OPTIONS.map((topic) => (
                 <TopicMenuOption
@@ -438,10 +447,10 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
 
         {bestAccuracy !== undefined ? (
           <>
-            <span aria-hidden="true" className="px-0.5 text-stone-300">
+            <span aria-hidden="true" className="px-0.5 text-border-strong">
               ·
             </span>
-            <span className="pl-1 text-[#0F766E] tabular-nums">Best {bestAccuracy}%</span>
+            <span className="pl-1 text-accent tabular-nums">Best {bestAccuracy}%</span>
           </>
         ) : null}
       </div>
@@ -454,12 +463,12 @@ const StudyCardHeader: FC<StudyCardHeaderProps> = ({
         title={isStarred ? "Saved" : "Save"}
         className={`-mr-2 -mt-0.5 flex min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-lg transition-colors ${
           isStarred
-            ? "text-amber-500 hover:bg-amber-50"
-            : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+            ? "text-star hover:bg-star-soft"
+            : "text-ink-faint hover:bg-surface-muted hover:text-ink-secondary"
         }`}
       >
         <Star
-          className={`h-4 w-4 ${isStarred ? "fill-amber-400 text-amber-500" : ""}`}
+          className={`h-4 w-4 ${isStarred ? "fill-star-fill text-star" : ""}`}
           aria-hidden="true"
         />
       </button>
@@ -556,7 +565,7 @@ const StudyCard: FC<StudyCardProps> = ({
       aria-label="Study card"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-8"
+      className="rounded-2xl border border-border bg-surface p-5 sm:p-8"
     >
       <StudyCardHeader
         region={settings.region}
@@ -573,21 +582,21 @@ const StudyCard: FC<StudyCardProps> = ({
         <button
           type="button"
           onClick={onSpeakEnglish}
-          className="group inline-flex min-h-[36px] items-center justify-center gap-2 rounded-xl px-3 py-1 text-base text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 sm:text-lg"
+          className="group inline-flex min-h-[36px] items-center justify-center gap-2 rounded-xl px-3 py-1 text-base text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink sm:text-lg"
         >
           <span>{phrase.english}</span>
           <Volume2
             className={`h-4 w-4 shrink-0 ${
               speakingState.isSpeaking && speakingState.activeLang === "en"
-                ? "text-[#0F766E]"
-                : "text-stone-400 group-hover:text-stone-700"
+                ? "text-accent"
+                : "text-ink-faint group-hover:text-ink-secondary"
             }`}
             aria-hidden="true"
           />
         </button>
       </div>
 
-      <hr className="my-2.5 border-stone-100" />
+      <hr className="my-2.5 border-border-subtle" />
 
       <div className="text-center">
         <h1 className="font-display text-balance text-3xl font-semibold leading-snug tracking-tight sm:text-4xl">
@@ -598,14 +607,14 @@ const StudyCard: FC<StudyCardProps> = ({
             title="Click to copy phrase"
             className={`inline-block max-w-full cursor-pointer rounded-xl px-3 py-0.5 transition-colors ${
               copied
-                ? "bg-[#0F766E]/10 text-[#0F766E]"
-                : "text-stone-900 hover:bg-stone-50 active:bg-stone-100"
+                ? "bg-accent-soft text-accent"
+                : "text-ink hover:bg-surface-subtle active:bg-surface-muted"
             }`}
           >
             {viText}
           </button>
         </h1>
-        <p className="mt-2 text-sm italic text-[#0F766E] sm:text-base">
+        <p className="mt-2 text-sm italic text-accent sm:text-base">
           {getPhrasePhonetic(phrase, settings.region)}
         </p>
       </div>
@@ -615,7 +624,7 @@ const StudyCard: FC<StudyCardProps> = ({
           <button
             type="button"
             onClick={onStopAudio}
-            className="flex min-h-[48px] items-center gap-2 rounded-xl bg-stone-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800"
+            className="flex min-h-[48px] items-center gap-2 rounded-xl bg-surface-inverse px-5 py-2.5 text-sm font-medium text-ink-inverse transition-colors hover:opacity-90"
           >
             {speakingState.isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -628,7 +637,7 @@ const StudyCard: FC<StudyCardProps> = ({
           <button
             type="button"
             onClick={onSpeakVietnamese}
-            className="flex min-h-[48px] items-center gap-2 rounded-xl bg-[#0F766E] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0D655E]"
+            className="flex min-h-[48px] items-center gap-2 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
           >
             <Play className="h-4 w-4 fill-current" aria-hidden="true" />
             <span>
@@ -645,12 +654,12 @@ const StudyCard: FC<StudyCardProps> = ({
           aria-pressed={practiceMode}
           className={`flex min-h-[48px] items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors ${
             practiceMode
-              ? "border-[#0F766E] bg-[#0F766E]/10 text-[#0F766E]"
-              : "border-stone-200 bg-white text-stone-800 hover:bg-stone-50"
+              ? "border-accent bg-accent-soft text-accent"
+              : "border-border bg-surface text-ink hover:bg-surface-subtle"
           }`}
         >
           <Mic
-            className={`h-4 w-4 ${practiceMode ? "text-[#0F766E]" : "text-stone-500"}`}
+            className={`h-4 w-4 ${practiceMode ? "text-accent" : "text-ink-muted"}`}
             aria-hidden="true"
           />
           <span>Practice</span>
@@ -675,7 +684,7 @@ const StudyCard: FC<StudyCardProps> = ({
       ) : null}
 
       {practiceMode ? (
-        <PracticePanel
+        <LazyPracticePanel
           key={`${phrase.id}-${settings.region}`}
           phraseText={getPhraseText(phrase, settings.region)}
           region={settings.region}
@@ -693,30 +702,30 @@ const StudyCard: FC<StudyCardProps> = ({
         settings={settings}
         maxTips={3}
         onOpenGuide={onOpenPronunciationGuide}
-        className="mt-6 border-t border-stone-100 pt-4"
+        className="mt-6 border-t border-border-subtle pt-4"
       />
 
-      <div className="mt-4 border-t border-stone-100 pt-3 text-center">
+      <div className="mt-4 border-t border-border-subtle pt-3 text-center">
         <button
           type="button"
           onClick={onToggleNote}
-          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900"
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
         >
-          <Info className="h-4 w-4 text-[#0F766E]" aria-hidden="true" />
+          <Info className="h-4 w-4 text-accent" aria-hidden="true" />
           <span>{showNote ? "Hide Street Note" : "Why locals say this (Street vs. Textbook)"}</span>
         </button>
 
         {showNote ? (
-          <div className="mt-3 space-y-2.5 rounded-xl bg-stone-50 p-4 text-left">
+          <div className="mt-3 space-y-2.5 rounded-xl bg-surface-subtle p-4 text-left">
             <div>
-              <p className="text-xs font-medium text-stone-500">Textbook says</p>
-              <p className="mt-0.5 text-sm text-stone-700 line-through decoration-stone-400">
+              <p className="text-xs font-medium text-ink-muted">Textbook says</p>
+              <p className="mt-0.5 text-sm text-ink-secondary line-through decoration-ink-faint">
                 {phrase.textbook}
               </p>
             </div>
             <div>
-              <p className="text-xs font-medium text-[#0F766E]">Real spoken Vietnamese</p>
-              <p className="mt-0.5 text-sm leading-relaxed text-stone-800">{phrase.streetNote}</p>
+              <p className="text-xs font-medium text-accent">Real spoken Vietnamese</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-ink">{phrase.streetNote}</p>
             </div>
           </div>
         ) : null}
@@ -731,11 +740,11 @@ interface EmptyStudyStateProps {
 }
 
 const EmptyStudyState: FC<EmptyStudyStateProps> = ({ hasTopicFilter, onClearTopic }) => (
-  <section className="rounded-2xl border border-stone-200 bg-white p-8 text-center">
-    <h1 className="font-display text-lg font-semibold text-stone-900">
+  <section className="rounded-2xl border border-border bg-surface p-8 text-center">
+    <h1 className="font-display text-lg font-semibold text-ink">
       {hasTopicFilter ? "No phrases for this situation" : "No phrases available"}
     </h1>
-    <p className="mt-1 text-sm text-stone-500">
+    <p className="mt-1 text-sm text-ink-muted">
       {hasTopicFilter
         ? "Switch back to All Situations to continue studying."
         : "Add phrases from the Library or Translate tab to begin studying."}
@@ -745,7 +754,7 @@ const EmptyStudyState: FC<EmptyStudyStateProps> = ({ hasTopicFilter, onClearTopi
         <button
           type="button"
           onClick={onClearTopic}
-          className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-[#0F766E] px-5 text-sm font-medium text-white transition-colors hover:bg-[#0D655E]"
+          className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-accent px-5 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
         >
           <span>All Situations</span>
         </button>
@@ -935,6 +944,57 @@ export const LearnView: FC<LearnViewProps> = ({
     };
   }, [navigate, phrase, settings]);
 
+  useEffect(() => {
+    if (!phrase || settings.ttsSource === "device-only") return undefined;
+    const useSlowClip = shouldUseNativeSlowClip(settings.playbackSpeed);
+    const activePrefetchOptions = {
+      slow: useSlowClip,
+      ttsSource: settings.ttsSource,
+      ttsVoiceProfile: settings.ttsVoiceProfile,
+    };
+    const normalPrefetchOptions = {
+      slow: false,
+      ttsSource: settings.ttsSource,
+      ttsVoiceProfile: settings.ttsVoiceProfile,
+    };
+    const nextPhrase =
+      studyList.length > 1 ? studyList[(safeIndex + 1) % studyList.length] : undefined;
+    const timerId = window.setTimeout(() => {
+      const currentText = getPhraseText(phrase, settings.region);
+      void audioService.prefetchVietnamese(currentText, settings.region, activePrefetchOptions);
+      if (useSlowClip) {
+        void audioService.prefetchVietnamese(currentText, settings.region, normalPrefetchOptions);
+      }
+      for (const dialect of DIALECT_REGIONS) {
+        if (dialect !== settings.region) {
+          void audioService.prefetchVietnamese(
+            getPhraseText(phrase, dialect),
+            dialect,
+            activePrefetchOptions,
+          );
+        }
+      }
+      if (nextPhrase && nextPhrase.id !== phrase.id) {
+        void audioService.prefetchVietnamese(
+          getPhraseText(nextPhrase, settings.region),
+          settings.region,
+          activePrefetchOptions,
+        );
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [
+    phrase,
+    safeIndex,
+    settings.playbackSpeed,
+    settings.region,
+    settings.ttsSource,
+    settings.ttsVoiceProfile,
+    studyList,
+  ]);
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
       <div className="space-y-4 lg:col-span-7">
@@ -972,7 +1032,7 @@ export const LearnView: FC<LearnViewProps> = ({
               <button
                 type="button"
                 onClick={handlePrev}
-                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50 active:scale-[0.99]"
+                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle active:scale-[0.99]"
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 <span>Previous</span>
@@ -980,7 +1040,7 @@ export const LearnView: FC<LearnViewProps> = ({
               <button
                 type="button"
                 onClick={handleNext}
-                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 text-sm font-medium text-white transition-colors hover:bg-stone-800 active:scale-[0.99]"
+                className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-surface-inverse px-4 text-sm font-medium text-ink-inverse transition-colors hover:opacity-90 active:scale-[0.99]"
               >
                 <span>Next</span>
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -992,13 +1052,13 @@ export const LearnView: FC<LearnViewProps> = ({
 
       <aside className="space-y-4 lg:col-span-5">
         {phrase ? (
-          <div className="rounded-2xl border border-stone-200 bg-white p-5">
-            <h2 className="font-display text-sm font-semibold text-stone-900">Across Vietnam</h2>
-            <p className="mt-0.5 text-xs text-stone-500">
+          <div className="rounded-2xl border border-border bg-surface p-5">
+            <h2 className="font-display text-sm font-semibold text-ink">Across Vietnam</h2>
+            <p className="mt-0.5 text-xs text-ink-muted">
               Tap any region to switch your active dialect and hear the difference.
             </p>
 
-            <div className="mt-4 divide-y divide-stone-100">
+            <div className="mt-4 divide-y divide-border-subtle">
               {DIALECT_REGIONS.map((region) => (
                 <RegionCompareRow
                   key={region}
@@ -1020,11 +1080,11 @@ export const LearnView: FC<LearnViewProps> = ({
           </div>
         ) : null}
 
-        <div className="rounded-2xl border border-stone-200 bg-white p-5">
+        <div className="rounded-2xl border border-border bg-surface p-5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-display text-sm font-semibold text-stone-900">Up Next</h2>
+            <h2 className="font-display text-sm font-semibold text-ink">Up Next</h2>
             {visibleQueue.length > 0 ? (
-              <span className="text-xs text-stone-500 tabular-nums">
+              <span className="text-xs text-ink-muted tabular-nums">
                 {String(queueStart + 1)}–{String(queueStart + visibleQueue.length)} of{" "}
                 {String(studyList.length)}
               </span>
@@ -1032,7 +1092,7 @@ export const LearnView: FC<LearnViewProps> = ({
           </div>
 
           {visibleQueue.length > 0 ? (
-            <div className="mt-3 divide-y divide-stone-100">
+            <div className="mt-3 divide-y divide-border-subtle">
               {visibleQueue.map((item, offset) => {
                 const actualIndex = queueStart + offset;
                 return (
@@ -1048,7 +1108,7 @@ export const LearnView: FC<LearnViewProps> = ({
               })}
             </div>
           ) : (
-            <p className="mt-3 text-xs text-stone-500">No phrases in this view.</p>
+            <p className="mt-3 text-xs text-ink-muted">No phrases in this view.</p>
           )}
         </div>
       </aside>

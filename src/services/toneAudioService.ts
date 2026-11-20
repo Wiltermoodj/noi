@@ -263,25 +263,61 @@ function mapVowelNucleus(nucleus: string, coda: string): string {
   return result;
 }
 
+const MAX_WORD_PHONETIC_CACHE_SIZE = 1024;
+const wordPhoneticCache = new Map<string, string>();
+const MAX_PHRASE_PHONETIC_CACHE_SIZE = 1024;
+const phrasePhoneticCache = new Map<string, string>();
+
 function approximateWord(word: string, region: DialectRegion): string {
   const lower = word.toLowerCase().normalize("NFC");
   const loanword = LOANWORD_PHONETICS[lower];
   if (loanword) return loanword;
 
+  const cacheKey = `${region}:${lower}`;
+  const cached = wordPhoneticCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const toneFree = stripToneMarksOnly(lower);
   const { onset, rest } = extractOnset(toneFree, region);
   const { nucleus, coda } = extractCoda(rest, region);
-  return `${onset}${mapVowelNucleus(nucleus, coda)}${coda}`;
+  const approx = `${onset}${mapVowelNucleus(nucleus, coda)}${coda}`;
+
+  if (wordPhoneticCache.size >= MAX_WORD_PHONETIC_CACHE_SIZE) {
+    const oldestKey = wordPhoneticCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      wordPhoneticCache.delete(oldestKey);
+    }
+  }
+  wordPhoneticCache.set(cacheKey, approx);
+  return approx;
 }
 
 export function approximateVietnamesePhonetic(text: string, region: DialectRegion): string {
-  const words = text
-    .trim()
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+
+  const cacheKey = `${region}:${trimmed}`;
+  const cached = phrasePhoneticCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const words = trimmed
     .split(/\s+/)
     .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
     .filter(Boolean);
 
-  return words.map((word) => approximateWord(word, region)).join(" ");
+  const result = words.map((word) => approximateWord(word, region)).join(" ");
+  if (phrasePhoneticCache.size >= MAX_PHRASE_PHONETIC_CACHE_SIZE) {
+    const oldestKey = phrasePhoneticCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      phrasePhoneticCache.delete(oldestKey);
+    }
+  }
+  phrasePhoneticCache.set(cacheKey, result);
+  return result;
 }
 
 export function isToneAudioSupported(): boolean {

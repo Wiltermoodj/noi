@@ -170,11 +170,23 @@ export async function synthesizeWebRegionalVietnameseTts(
   voiceProfile: TtsVoiceProfile,
   timeoutMs = 15_000,
 ): Promise<WebTtsSynthesisResult> {
+  const totalBudgetMs = Math.max(2_000, timeoutMs);
+  const deadlineMs = Date.now() + totalBudgetMs;
+  const reservedFallbackMs = Math.min(4_000, Math.floor(totalBudgetMs * 0.35));
+  const kokoroBudgetMs = Math.max(1_500, totalBudgetMs - reservedFallbackMs);
+
   try {
-    return await synthesizeKokoroRegionalVietnameseTts(text, region, slow, voiceProfile, timeoutMs);
+    return await synthesizeKokoroRegionalVietnameseTts(
+      text,
+      region,
+      slow,
+      voiceProfile,
+      kokoroBudgetMs,
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.warn("Kokoro regional Vietnamese TTS unavailable, using web fallback:", message);
-    return synthesizeGoogleTranslateFallback(text, region, slow, timeoutMs);
+    const remainingMs = Math.max(1_500, deadlineMs - Date.now());
+    return synthesizeGoogleTranslateFallback(text, region, slow, remainingMs);
   }
 }

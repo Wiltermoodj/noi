@@ -41,6 +41,7 @@ export interface ServerOptions {
   webTtsFallback?: WebTtsSynthesizer | null;
   diskCacheDir?: string;
   maxMemoryCacheEntries?: number;
+  maxMemoryCacheBytes?: number;
   maxDiskCacheEntries?: number;
   maxDiskCacheBytes?: number;
   upstreamTimeoutMs?: number;
@@ -56,9 +57,10 @@ export interface ServerOptions {
 const parsedPort = Number(process.env["PORT"]);
 const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
 const MAX_TEXT_LENGTH = 400;
-const DEFAULT_MAX_MEMORY_CACHE_ENTRIES = 240;
-const DEFAULT_MAX_DISK_CACHE_ENTRIES = 500;
-const DEFAULT_MAX_DISK_CACHE_BYTES = 64 * 1024 * 1024;
+const DEFAULT_MAX_MEMORY_CACHE_ENTRIES = 1200;
+const DEFAULT_MAX_MEMORY_CACHE_BYTES = 192 * 1024 * 1024;
+const DEFAULT_MAX_DISK_CACHE_ENTRIES = 4000;
+const DEFAULT_MAX_DISK_CACHE_BYTES = 512 * 1024 * 1024;
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_REQUESTS_PER_WINDOW = 180;
 const DEFAULT_MAX_MISSES_PER_WINDOW = 25;
@@ -290,6 +292,7 @@ export function createApp(options: ServerOptions = {}): Express {
       ? path.resolve(envCacheDir)
       : path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".tts-cache"));
   const maxMemoryCacheEntries = options.maxMemoryCacheEntries ?? DEFAULT_MAX_MEMORY_CACHE_ENTRIES;
+  const maxMemoryCacheBytes = options.maxMemoryCacheBytes ?? DEFAULT_MAX_MEMORY_CACHE_BYTES;
   const maxConcurrentUpstream = options.maxConcurrentUpstream ?? DEFAULT_MAX_CONCURRENT_UPSTREAM;
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
   const now = options.now ?? Date.now;
@@ -322,6 +325,7 @@ export function createApp(options: ServerOptions = {}): Express {
   });
 
   const audioCache = new Map<string, CachedAudioEntry>();
+  let audioCacheBytes = 0;
   const inflightResolutions = new Map<
     string,
     Promise<{ entry: CachedAudioEntry; cacheState: "memory" | "disk" | "miss" }>
@@ -329,21 +333,69 @@ export function createApp(options: ServerOptions = {}): Express {
   let activeUpstreamCount = 0;
 
   const setCachedAudio = (key: string, entry: CachedAudioEntry): void => {
-    if (audioCache.has(key)) {
+    const existing = audioCache.get(key);
+    if (existing) {
+      audioCacheBytes = Math.max(0, audioCacheBytes - existing.buffer.length);
       audioCache.delete(key);
-    } else if (audioCache.size >= maxMemoryCacheEntries) {
+    }
+    if (entry.buffer.length > maxMemoryCacheBytes || maxMemoryCacheEntries <= 0) {
+      return;
+    }
+    while (
+      audioCache.size >= maxMemoryCacheEntries ||
+      (audioCache.size > 0 && audioCacheBytes + entry.buffer.length > maxMemoryCacheBytes)
+    ) {
       const oldestKey = audioCache.keys().next().value;
-      if (oldestKey !== undefined) {
-        audioCache.delete(oldestKey);
+      if (oldestKey === undefined) break;
+      const oldestEntry = audioCache.get(oldestKey);
+      audioCache.delete(oldestKey);
+      if (oldestEntry) {
+        audioCacheBytes = Math.max(0, audioCacheBytes - oldestEntry.buffer.length);
       }
     }
     audioCache.set(key, entry);
+    audioCacheBytes += entry.buffer.length;
   };
 
   const isGeminiReady = (): boolean =>
     ttsClient.resolveAiClient() !== null &&
     ttsClient.isAuthHealthy() &&
-    ttsClient.isBillingHealthy();
+    ttsClient.isBillingHealthy() &&
+    ttsClient.hasAvailableModel();
+
+  const readCachedWebFallbackAudio = async (
+    webCacheKey: string,
+  ): Promise<{ entry: CachedAudioEntry; cacheState: "memory" | "disk" } | null> => {
+    const memHit = audioCache.get(webCacheKey);
+    if (memHit) {
+      setCachedAudio(webCacheKey, memHit);
+      return { entry: memHit, cacheState: "memory" };
+    }
+
+    const diskWav = await diskCache.read(webCacheKey, "audio/wav");
+    if (diskWav) {
+      const entry: CachedAudioEntry = {
+        buffer: diskWav,
+        contentType: "audio/wav",
+        engine: BROWSER_REGIONAL_ENGINE,
+      };
+      setCachedAudio(webCacheKey, entry);
+      return { entry, cacheState: "disk" };
+    }
+
+    const diskMp3 = await diskCache.read(webCacheKey, "audio/mpeg");
+    if (diskMp3) {
+      const entry: CachedAudioEntry = {
+        buffer: diskMp3,
+        contentType: "audio/mpeg",
+        engine: BROWSER_REGIONAL_ENGINE,
+      };
+      setCachedAudio(webCacheKey, entry);
+      return { entry, cacheState: "disk" };
+    }
+
+    return null;
+  };
 
   const resolveWebFallbackAudio = async (
     params: {
@@ -360,32 +412,9 @@ export function createApp(options: ServerOptions = {}): Express {
       throw new TtsNotConfiguredError();
     }
 
-    const memHit = audioCache.get(params.webCacheKey);
-    if (memHit) {
-      setCachedAudio(params.webCacheKey, memHit);
-      return { entry: memHit, cacheState: "memory" };
-    }
-
-    const diskWav = await diskCache.read(params.webCacheKey, "audio/wav");
-    if (diskWav) {
-      const entry: CachedAudioEntry = {
-        buffer: diskWav,
-        contentType: "audio/wav",
-        engine: BROWSER_REGIONAL_ENGINE,
-      };
-      setCachedAudio(params.webCacheKey, entry);
-      return { entry, cacheState: "disk" };
-    }
-
-    const diskMp3 = await diskCache.read(params.webCacheKey, "audio/mpeg");
-    if (diskMp3) {
-      const entry: CachedAudioEntry = {
-        buffer: diskMp3,
-        contentType: "audio/mpeg",
-        engine: BROWSER_REGIONAL_ENGINE,
-      };
-      setCachedAudio(params.webCacheKey, entry);
-      return { entry, cacheState: "disk" };
+    const cachedWeb = await readCachedWebFallbackAudio(params.webCacheKey);
+    if (cachedWeb) {
+      return cachedWeb;
     }
 
     if (!rateLimitAlreadyChecked) {
@@ -432,10 +461,6 @@ export function createApp(options: ServerOptions = {}): Express {
       cacheKey: string;
     },
   ): Promise<{ entry: CachedAudioEntry; cacheState: "miss" }> => {
-    const missRetryAfter = rateLimiter.checkUpstreamMiss(params.clientIp);
-    if (missRetryAfter !== null) {
-      throw new TtsRateLimitError(missRetryAfter);
-    }
     if (activeUpstreamCount >= maxConcurrentUpstream) {
       throw new TtsRateLimitError(3);
     }
@@ -490,12 +515,18 @@ export function createApp(options: ServerOptions = {}): Express {
       throw new TtsNotConfiguredError();
     }
 
+    let rateLimitCheckedForGemini = false;
     try {
+      const missRetryAfter = rateLimiter.checkUpstreamMiss(params.clientIp);
+      if (missRetryAfter !== null) {
+        throw new TtsRateLimitError(missRetryAfter);
+      }
+      rateLimitCheckedForGemini = true;
       return await synthesizeWithGemini(ai, params);
     } catch (geminiError) {
       if (webTtsFallback && shouldFallbackFromGeminiError(geminiError)) {
         try {
-          return await resolveWebFallbackAudio(params, true);
+          return await resolveWebFallbackAudio(params, rateLimitCheckedForGemini);
         } catch {
           throw geminiError;
         }
@@ -598,6 +629,7 @@ export function createApp(options: ServerOptions = {}): Express {
           browserRegionalFallbackEnabled: webTtsFallback !== null,
           uptimeSeconds: Math.floor(process.uptime()),
           memoryCacheEntries: audioCache.size,
+          memoryCacheBytes: audioCacheBytes,
           activeUpstreamCount,
           upstreamCooldownModels: ttsClient.getCooldownModels(),
           upstreamAuthHealthy: ttsClient.isAuthHealthy(),
@@ -689,6 +721,7 @@ async function startServer(): Promise<void> {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(rootDir, "dist");
+    const assetsDir = path.join(distDir, "assets");
     app.use(
       express.static(distDir, {
         setHeaders: (res, filePath) => {
@@ -698,11 +731,16 @@ async function startServer(): Promise<void> {
           } else if (baseName === "manifest.webmanifest") {
             res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
             res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+          } else if (baseName === "index.html") {
+            res.setHeader("Cache-Control", "no-cache, must-revalidate");
+          } else if (filePath.startsWith(`${assetsDir}${path.sep}`)) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
           }
         },
       }),
     );
     app.get("/{*path}", (_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
       res.sendFile(path.join(distDir, "index.html"), (err: Error | null | undefined) => {
         if (err !== null && err !== undefined && !res.headersSent) {
           next(err);
@@ -735,6 +773,9 @@ async function startServer(): Promise<void> {
         clearTimeout(forceExitTimer);
         process.exit(0);
       });
+      if (typeof httpServer.closeIdleConnections === "function") {
+        httpServer.closeIdleConnections();
+      }
     })();
   };
 

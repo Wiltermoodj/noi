@@ -13,10 +13,11 @@ import {
   X,
 } from "lucide-react";
 import type { ChangeEvent, FC } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { DICTIONARY_ENTRIES } from "../data/dictionary";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useOnlineStatus } from "../hooks/useOnlineStatus";
+import { useProgressiveRenderCount } from "../hooks/useProgressiveRenderCount";
 import { useSpeakingStatus } from "../hooks/useSpeakingStatus";
 import { audioService, type SpeakingStatus } from "../services/audioService";
 import { getPhrasePhonetic, getPhraseText } from "../services/storageService";
@@ -29,6 +30,7 @@ import {
   buildPhraseFromTranslation,
   detectDirection,
   filterDictionaryEntries,
+  findMatchingLibraryPhrase,
   getDictionaryEntryText,
   normalizeText,
   translateOffline,
@@ -44,7 +46,7 @@ import {
   type TranslationResult,
 } from "../types/vietnamese";
 import { AudioErrorBanner } from "./AudioErrorBanner";
-import { PracticePanel } from "./PracticePanel";
+import { LazyPracticePanel } from "./LazyPracticePanel";
 import { PronunciationTipsCard } from "./PronunciationTipsCard";
 import type { ShowBigPayload } from "./ShowBigModal";
 
@@ -96,8 +98,8 @@ const PosFilterButton: FC<PosFilterButtonProps> = ({ option, active, onSelect })
       onClick={handleClick}
       className={`min-h-[30px] whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition-colors ${
         active
-          ? "bg-stone-900 text-white"
-          : "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-900"
+          ? "bg-surface-inverse text-ink-inverse"
+          : "bg-surface-muted text-ink-secondary hover:bg-border hover:text-ink"
       }`}
     >
       {option.label}
@@ -119,7 +121,7 @@ const SampleChip: FC<SampleChipProps> = ({ sample, onSelect }) => {
     <button
       type="button"
       onClick={handleClick}
-      className="min-h-[32px] rounded-lg bg-stone-100 px-2.5 text-xs text-stone-700 transition-colors hover:bg-stone-200"
+      className="min-h-[32px] rounded-lg bg-surface-muted px-2.5 text-xs text-ink-secondary transition-colors hover:bg-border hover:text-ink"
     >
       {sample}
     </button>
@@ -153,25 +155,25 @@ const RegionalVariantButton: FC<RegionalVariantButtonProps> = ({
       aria-label={`Listen to ${meta.fullRegionLabel} pronunciation: ${text}`}
       className={`flex min-h-[54px] items-start justify-between gap-2 rounded-xl border p-2.5 text-left transition-colors ${
         isBusy
-          ? "border-[#0F766E] bg-[#0F766E]/10"
+          ? "border-accent bg-accent-soft"
           : active
-            ? "border-[#0F766E]/40 bg-[#0F766E]/5"
-            : "border-stone-200 hover:bg-stone-50"
+            ? "border-accent-border bg-accent-soft/60"
+            : "border-border hover:bg-surface-subtle"
       }`}
     >
       <div className="min-w-0">
-        <span className="block text-xs font-medium text-stone-500">
+        <span className="block text-xs font-medium text-ink-muted">
           {meta.label} · {meta.cities}
         </span>
-        <span className="mt-0.5 block text-sm font-medium text-stone-900">{text}</span>
+        <span className="mt-0.5 block text-sm font-medium text-ink">{text}</span>
       </div>
       {isBusy ? (
         <Loader2
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-[#0F766E]"
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent"
           aria-hidden="true"
         />
       ) : (
-        <Volume2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0F766E]" aria-hidden="true" />
+        <Volume2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
       )}
     </button>
   );
@@ -184,7 +186,7 @@ interface RelatedPhraseRowProps {
   onTogglePhraseStar: (id: string) => void;
 }
 
-const RelatedPhraseRow: FC<RelatedPhraseRowProps> = ({
+const RelatedPhraseRowBase: FC<RelatedPhraseRowProps> = ({
   phrase,
   region,
   onSpeak,
@@ -204,13 +206,13 @@ const RelatedPhraseRow: FC<RelatedPhraseRowProps> = ({
       <button
         type="button"
         onClick={handleClick}
-        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-3 text-left hover:text-[#0F766E]"
+        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-3 text-left hover:text-accent"
       >
         <div className="min-w-0">
-          <p className="text-sm font-medium text-stone-900">{vi}</p>
-          <p className="text-xs text-stone-500">{phrase.english}</p>
+          <p className="text-sm font-medium text-ink">{vi}</p>
+          <p className="text-xs text-ink-muted">{phrase.english}</p>
         </div>
-        <Volume2 className="h-4 w-4 shrink-0 text-stone-400" aria-hidden="true" />
+        <Volume2 className="h-4 w-4 shrink-0 text-ink-faint" aria-hidden="true" />
       </button>
 
       <button
@@ -222,18 +224,20 @@ const RelatedPhraseRow: FC<RelatedPhraseRowProps> = ({
         }
         className={`flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl transition-colors ${
           phrase.isStarred
-            ? "text-amber-500 hover:bg-amber-50"
-            : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+            ? "text-star hover:bg-star-soft"
+            : "text-ink-faint hover:bg-surface-muted hover:text-ink-secondary"
         }`}
       >
         <Star
-          className={`h-4 w-4 ${phrase.isStarred ? "fill-amber-400" : ""}`}
+          className={`h-4 w-4 ${phrase.isStarred ? "fill-star-fill" : ""}`}
           aria-hidden="true"
         />
       </button>
     </div>
   );
 };
+
+const RelatedPhraseRow = memo(RelatedPhraseRowBase);
 
 interface BreakdownRowProps {
   item: TranslationBreakdown;
@@ -248,9 +252,9 @@ const BreakdownRow: FC<BreakdownRowProps> = ({ item, starred, onToggleWordStar }
 
   return (
     <div className="flex items-center justify-between gap-2 text-sm">
-      <span className="text-stone-600">{item.sourceToken}</span>
+      <span className="text-ink-secondary">{item.sourceToken}</span>
       <div className="flex items-center gap-1.5">
-        <span className="font-medium text-stone-900">{item.targetText}</span>
+        <span className="font-medium text-ink">{item.targetText}</span>
         <button
           type="button"
           onClick={handleToggle}
@@ -258,11 +262,11 @@ const BreakdownRow: FC<BreakdownRowProps> = ({ item, starred, onToggleWordStar }
           aria-label={starred ? `Remove ${item.entry.en} from Saved` : `Save ${item.entry.en}`}
           className={`flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg transition-colors ${
             starred
-              ? "text-amber-500 hover:bg-amber-50"
-              : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              ? "text-star hover:bg-star-soft"
+              : "text-ink-faint hover:bg-surface-muted hover:text-ink-secondary"
           }`}
         >
-          <Star className={`h-3.5 w-3.5 ${starred ? "fill-amber-400" : ""}`} aria-hidden="true" />
+          <Star className={`h-3.5 w-3.5 ${starred ? "fill-star-fill" : ""}`} aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -279,7 +283,7 @@ interface DictionaryRowProps {
   onToggleStar: (entryId: string) => void;
 }
 
-const DictionaryRow: FC<DictionaryRowProps> = ({
+const DictionaryRowBase: FC<DictionaryRowProps> = ({
   entry,
   region,
   isBusy,
@@ -310,12 +314,12 @@ const DictionaryRow: FC<DictionaryRowProps> = ({
         className="group min-w-0 flex-1 text-left"
       >
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-sm font-semibold text-stone-900 transition-colors group-hover:text-[#0F766E]">
+          <span className="text-sm font-semibold text-ink transition-colors group-hover:text-accent">
             {displayVi}
           </span>
-          <span className="text-xs text-stone-500">· {entry.en}</span>
+          <span className="text-xs text-ink-muted">· {entry.en}</span>
         </div>
-        <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{entry.note}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{entry.note}</p>
       </button>
 
       <div className="flex shrink-0 items-center gap-0.5">
@@ -327,11 +331,11 @@ const DictionaryRow: FC<DictionaryRowProps> = ({
           title={starred ? "Saved" : "Save"}
           className={`flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg transition-colors ${
             starred
-              ? "text-amber-500 hover:bg-amber-50"
-              : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              ? "text-star hover:bg-star-soft"
+              : "text-ink-faint hover:bg-surface-muted hover:text-ink-secondary"
           }`}
         >
-          <Star className={`h-4 w-4 ${starred ? "fill-amber-400" : ""}`} aria-hidden="true" />
+          <Star className={`h-4 w-4 ${starred ? "fill-star-fill" : ""}`} aria-hidden="true" />
         </button>
 
         <button
@@ -340,8 +344,8 @@ const DictionaryRow: FC<DictionaryRowProps> = ({
           onClick={handleSpeak}
           className={`flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg transition-colors ${
             isBusy
-              ? "bg-[#0F766E] text-white"
-              : "text-stone-400 hover:bg-stone-100 hover:text-[#0F766E]"
+              ? "bg-accent text-accent-fg"
+              : "text-ink-faint hover:bg-surface-muted hover:text-accent"
           }`}
         >
           {isBusy ? (
@@ -354,6 +358,8 @@ const DictionaryRow: FC<DictionaryRowProps> = ({
     </div>
   );
 };
+
+const DictionaryRow = memo(DictionaryRowBase);
 
 interface RegionalVariantsSectionProps {
   variants: { north: string; central: string; south: string };
@@ -368,8 +374,8 @@ const RegionalVariantsSection: FC<RegionalVariantsSectionProps> = ({
   speakingState,
   onSpeakVietnamese,
 }) => (
-  <div className="mt-4 border-t border-stone-100 pt-4">
-    <p className="mb-2 text-xs font-medium text-stone-500">
+  <div className="mt-4 border-t border-border-subtle pt-4">
+    <p className="mb-2 text-xs font-medium text-ink-muted">
       Tap a region to hear its pronunciation
     </p>
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -413,7 +419,7 @@ const TranslationCardFooter: FC<TranslationCardFooterProps> = ({
   onTogglePractice,
   onSaveAndStarResult,
 }) => (
-  <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 border-t border-stone-100 pt-4">
+  <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5 border-t border-border-subtle pt-4">
     {hasPrimaryTranslation ? (
       <div className="flex flex-wrap items-center gap-2">
         {canPractice ? (
@@ -423,8 +429,8 @@ const TranslationCardFooter: FC<TranslationCardFooterProps> = ({
             aria-pressed={practiceOpen}
             className={`inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl border px-3.5 text-xs font-medium transition-colors ${
               practiceOpen
-                ? "border-[#0F766E] bg-[#0F766E]/10 text-[#0F766E]"
-                : "border-stone-200 text-stone-800 hover:bg-stone-50"
+                ? "border-accent bg-accent-soft text-accent"
+                : "border-border text-ink hover:bg-surface-subtle"
             }`}
           >
             <Mic className="h-3.5 w-3.5" aria-hidden="true" />
@@ -438,13 +444,13 @@ const TranslationCardFooter: FC<TranslationCardFooterProps> = ({
           aria-pressed={isResultStarred}
           className={`inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl border px-3.5 text-xs font-medium transition-colors ${
             isResultStarred
-              ? "border-amber-300 bg-amber-50 text-amber-900"
-              : "border-stone-200 text-stone-800 hover:bg-stone-50"
+              ? "border-star-border bg-star-soft text-star-ink"
+              : "border-border text-ink hover:bg-surface-subtle"
           }`}
         >
           <Star
             className={`h-3.5 w-3.5 ${
-              isResultStarred ? "fill-amber-400 text-amber-500" : "text-stone-400"
+              isResultStarred ? "fill-star-fill text-star" : "text-ink-faint"
             }`}
             aria-hidden="true"
           />
@@ -452,7 +458,7 @@ const TranslationCardFooter: FC<TranslationCardFooterProps> = ({
         </button>
       </div>
     ) : (
-      <span className="text-xs text-stone-500">
+      <span className="text-xs text-ink-muted">
         Browse the offline vocabulary panel on the right for single words.
       </span>
     )}
@@ -462,13 +468,13 @@ const TranslationCardFooter: FC<TranslationCardFooterProps> = ({
         href={googleTranslateHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl border border-stone-200 px-3.5 text-xs font-medium text-stone-800 transition-colors hover:bg-stone-50"
+        className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl border border-border px-3.5 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle"
       >
         <span>Google Translate</span>
-        <ExternalLink className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
+        <ExternalLink className="h-3.5 w-3.5 text-ink-muted" aria-hidden="true" />
       </a>
     ) : (
-      <span className="text-xs font-medium text-[#0F766E]">100% Offline Dictionary</span>
+      <span className="text-xs font-medium text-accent">100% Offline Dictionary</span>
     )}
   </div>
 );
@@ -521,15 +527,15 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-stone-500">
+          <p className="text-xs font-medium text-ink-muted">
             Offline Spoken {targetLabel}
             {direction === "en-vi" ? ` · ${DIALECT_META[activeRegion].label}` : ""}
           </p>
-          <p className="mt-1.5 font-display text-2xl font-semibold text-stone-900">
+          <p className="mt-1.5 font-display text-2xl font-semibold text-ink">
             {result.primaryTranslation}
           </p>
           {result.phonetic ? (
-            <p className="mt-1 text-sm italic text-[#0F766E]">{result.phonetic}</p>
+            <p className="mt-1 text-sm italic text-accent">{result.phonetic}</p>
           ) : null}
         </div>
 
@@ -539,10 +545,10 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
             aria-label={`Copy ${targetLabel} translation`}
             title="Copy translation"
             onClick={onCopyOutput}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-border bg-surface text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
           >
             {copied ? (
-              <Check className="h-4 w-4 text-[#0F766E]" aria-hidden="true" />
+              <Check className="h-4 w-4 text-accent" aria-hidden="true" />
             ) : (
               <Copy className="h-4 w-4" aria-hidden="true" />
             )}
@@ -553,7 +559,7 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
             aria-label="Show large Vietnamese text to local"
             title="Show to Local"
             onClick={onShowBigOutput}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl border border-border bg-surface text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
           >
             <Maximize2 className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -562,7 +568,7 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
             type="button"
             aria-label={`Listen to ${targetLabel} translation`}
             onClick={onSpeakOutput}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-[#0F766E] text-white transition-colors hover:bg-[#0D655E]"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-accent text-accent-fg transition-colors hover:bg-accent-hover"
           >
             {isOutputLoading ? (
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -574,8 +580,8 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
       </div>
 
       {result.unmatchedTokens.length > 0 ? (
-        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden="true" />
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-warning-border bg-warning-soft px-3 py-2 text-xs text-warning-ink">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
           <span>
             Untranslated offline words: <strong>{result.unmatchedTokens.join(", ")}</strong>. Try
             simpler keywords or browse the offline vocabulary panel.
@@ -602,8 +608,8 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
       ) : null}
 
       {result.wordBreakdown.length > 1 ? (
-        <div className="mt-4 border-t border-stone-100 pt-4">
-          <p className="text-xs font-medium text-stone-500">Word-by-word breakdown</p>
+        <div className="mt-4 border-t border-border-subtle pt-4">
+          <p className="text-xs font-medium text-ink-muted">Word-by-word breakdown</p>
           <div className="mt-2 space-y-1">
             {result.wordBreakdown.map((item) => (
               <BreakdownRow
@@ -618,7 +624,7 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
       ) : null}
 
       {result.streetNote ? (
-        <p className="mt-4 border-t border-stone-100 pt-3 text-xs leading-relaxed text-stone-600">
+        <p className="mt-4 border-t border-border-subtle pt-3 text-xs leading-relaxed text-ink-secondary">
           {result.streetNote}
         </p>
       ) : null}
@@ -630,7 +636,7 @@ const TranslationPrimaryOutput: FC<TranslationPrimaryOutputProps> = ({
           maxTips={2}
           compact
           onOpenGuide={onOpenPronunciationGuide}
-          className="mt-4 border-t border-stone-100 pt-4"
+          className="mt-4 border-t border-border-subtle pt-4"
         />
       ) : null}
     </>
@@ -695,7 +701,7 @@ const TranslationResultCard: FC<TranslationResultCardProps> = ({
   }, []);
 
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-5">
+    <section className="rounded-2xl border border-border bg-surface p-5">
       {result.primaryTranslation ? (
         <TranslationPrimaryOutput
           result={result}
@@ -716,10 +722,10 @@ const TranslationResultCard: FC<TranslationResultCardProps> = ({
         />
       ) : (
         <div className="space-y-2">
-          <p className="text-sm font-medium text-stone-800">
+          <p className="text-sm font-medium text-ink">
             No exact match in the built-in offline vocabulary yet.
           </p>
-          <p className="text-xs leading-relaxed text-stone-500">
+          <p className="text-xs leading-relaxed text-ink-muted">
             Try shorter everyday words (e.g. &ldquo;coffee&rdquo;, &ldquo;50k&rdquo;, &ldquo;turn
             left&rdquo;, &ldquo;pharmacy&rdquo;) or filter the offline vocabulary list on the right.
           </p>
@@ -727,7 +733,7 @@ const TranslationResultCard: FC<TranslationResultCardProps> = ({
       )}
 
       {canPractice && practiceOpen ? (
-        <PracticePanel
+        <LazyPracticePanel
           key={`${result.primaryTranslation}-${activeRegion}`}
           phraseText={result.primaryTranslation}
           region={activeRegion}
@@ -771,11 +777,14 @@ export const TranslateView: FC<TranslateViewProps> = ({
     prefillRequest ? detectDirection(prefillRequest.query) : "en-vi",
   );
   const [query, setQuery] = useState(() => prefillRequest?.query ?? "");
+  const deferredQuery = useDeferredValue(query);
   const [dictFilter, setDictFilter] = useState("");
+  const deferredDictFilter = useDeferredValue(dictFilter);
   const [posFilter, setPosFilter] = useState<DictPosFilter>("all");
   const { copied, copyText, resetCopied } = useCopyFeedback();
   const speakingState = useSpeakingStatus();
   const lastPrefillNonceRef = useRef(prefillRequest?.nonce ?? 0);
+  const dictScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!prefillRequest) return;
@@ -787,24 +796,38 @@ export const TranslateView: FC<TranslateViewProps> = ({
   }, [prefillRequest, resetCopied]);
 
   const result = useMemo(
-    () => translateOffline(query, direction, settings.region, phrases),
-    [query, direction, settings.region, phrases],
+    () => translateOffline(deferredQuery, direction, settings.region, phrases),
+    [deferredQuery, direction, settings.region, phrases],
   );
 
   const filteredDictionary = useMemo(
-    () => filterDictionaryEntries(dictFilter, DICTIONARY_ENTRIES, posFilter),
-    [dictFilter, posFilter],
+    () => filterDictionaryEntries(deferredDictFilter, DICTIONARY_ENTRIES, posFilter),
+    [deferredDictFilter, posFilter],
+  );
+
+  const {
+    visibleCount: visibleDictCount,
+    hasMore: hasMoreDictEntries,
+    loadMore: loadMoreDictEntries,
+    sentinelRef: dictSentinelRef,
+  } = useProgressiveRenderCount({
+    totalCount: filteredDictionary.length,
+    initialCount: 50,
+    batchSize: 60,
+    resetKey: `${posFilter}:${deferredDictFilter}`,
+    rootRef: dictScrollRef,
+  });
+
+  const renderedDictionary = useMemo(
+    () => filteredDictionary.slice(0, visibleDictCount),
+    [filteredDictionary, visibleDictCount],
   );
 
   const matchingPhrase = useMemo(() => {
     if (!result?.primaryTranslation) return undefined;
-    const normEn = normalizeText(direction === "en-vi" ? result.query : result.primaryTranslation);
-    const normVi = normalizeText(direction === "en-vi" ? result.primaryTranslation : result.query);
-    return phrases.find(
-      (p) =>
-        normalizeText(p.english) === normEn ||
-        normalizeText(getPhraseText(p, settings.region)) === normVi,
-    );
+    const enText = direction === "en-vi" ? result.query : result.primaryTranslation;
+    const viText = direction === "en-vi" ? result.primaryTranslation : result.query;
+    return findMatchingLibraryPhrase(phrases, enText, viText, settings.region);
   }, [direction, phrases, result, settings.region]);
 
   const matchingDictEntry = useMemo(() => {
@@ -996,24 +1019,20 @@ export const TranslateView: FC<TranslateViewProps> = ({
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
       <div className="space-y-4 lg:col-span-7">
-        <div className="flex items-center justify-between gap-2 rounded-2xl border border-stone-200 bg-white px-4 py-2">
-          <span className="flex-1 text-center text-sm font-semibold text-stone-900">
-            {sourceLabel}
-          </span>
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-4 py-2">
+          <span className="flex-1 text-center text-sm font-semibold text-ink">{sourceLabel}</span>
           <button
             type="button"
             onClick={swapDirection}
             aria-label="Swap translation direction"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-stone-100 text-stone-700 transition-colors hover:bg-stone-200 hover:text-stone-900"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-surface-muted text-ink-secondary transition-colors hover:bg-border hover:text-ink"
           >
             <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />
           </button>
-          <span className="flex-1 text-center text-sm font-semibold text-stone-900">
-            {targetLabel}
-          </span>
+          <span className="flex-1 text-center text-sm font-semibold text-ink">{targetLabel}</span>
         </div>
 
-        <div className="rounded-2xl border border-stone-200 bg-white p-4">
+        <div className="rounded-2xl border border-border bg-surface p-4">
           <textarea
             rows={3}
             value={query}
@@ -1024,10 +1043,10 @@ export const TranslateView: FC<TranslateViewProps> = ({
                 ? "Type an English word, phrase, or VND price (e.g. iced milk coffee, 50k)..."
                 : "Type Vietnamese with or without accents (e.g. tính tiền, năm chục ngàn)..."
             }
-            className="w-full resize-none bg-transparent text-base text-stone-900 placeholder:text-stone-400 focus:outline-none"
+            className="w-full resize-none bg-transparent text-base text-ink placeholder:text-ink-faint focus:outline-none"
           />
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle pt-2">
             <div className="flex flex-wrap items-center gap-1.5">
               {prompts.map((sample) => (
                 <SampleChip key={sample} sample={sample} onSelect={setQuery} />
@@ -1040,7 +1059,7 @@ export const TranslateView: FC<TranslateViewProps> = ({
                   type="button"
                   aria-label={`Speak ${sourceLabel} input`}
                   onClick={handleSpeakInput}
-                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted hover:bg-surface-muted hover:text-ink"
                 >
                   <Volume2 className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -1048,7 +1067,7 @@ export const TranslateView: FC<TranslateViewProps> = ({
                   type="button"
                   aria-label="Clear input"
                   onClick={handleClearQuery}
-                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-500 hover:bg-stone-100 hover:text-stone-900"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted hover:bg-surface-muted hover:text-ink"
                 >
                   <X className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -1057,12 +1076,12 @@ export const TranslateView: FC<TranslateViewProps> = ({
           </div>
 
           {detectedOpposite ? (
-            <div className="mt-2 flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-600">
+            <div className="mt-2 flex items-center justify-between rounded-xl bg-surface-subtle px-3 py-2 text-xs text-ink-secondary">
               <span>Looks like {direction === "en-vi" ? "Vietnamese" : "English"} text.</span>
               <button
                 type="button"
                 onClick={handleSwitchDetectedDirection}
-                className="font-semibold text-[#0F766E] hover:underline"
+                className="font-semibold text-accent hover:underline"
               >
                 Switch to {direction === "en-vi" ? "VI → EN" : "EN → VI"}
               </button>
@@ -1098,11 +1117,11 @@ export const TranslateView: FC<TranslateViewProps> = ({
         ) : null}
 
         {result && result.matchedPhrases.length > 0 ? (
-          <div className="rounded-2xl border border-stone-200 bg-white p-5">
-            <h3 className="font-display text-sm font-semibold text-stone-900">
+          <div className="rounded-2xl border border-border bg-surface p-5">
+            <h3 className="font-display text-sm font-semibold text-ink">
               Related Real-Spoken Phrases
             </h3>
-            <div className="mt-3 divide-y divide-stone-100">
+            <div className="mt-3 divide-y divide-border-subtle">
               {result.matchedPhrases.map((phrase) => (
                 <RelatedPhraseRow
                   key={phrase.id}
@@ -1117,21 +1136,21 @@ export const TranslateView: FC<TranslateViewProps> = ({
         ) : null}
       </div>
 
-      <aside className="rounded-2xl border border-stone-200 bg-white p-5 lg:col-span-5">
+      <aside className="rounded-2xl border border-border bg-surface p-5 lg:col-span-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="font-display text-sm font-semibold text-stone-900">
+          <h2 className="font-display text-sm font-semibold text-ink">
             Offline Vocabulary (
             {filteredDictionary.length === DICTIONARY_ENTRIES.length
               ? DICTIONARY_ENTRIES.length
               : `${String(filteredDictionary.length)}/${String(DICTIONARY_ENTRIES.length)}`}
             )
           </h2>
-          <span className="text-xs text-stone-500">EN ⇄ VI</span>
+          <span className="text-xs text-ink-muted">EN ⇄ VI</span>
         </div>
 
         <div className="relative mt-3">
           <Search
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint"
             aria-hidden="true"
           />
           <input
@@ -1140,7 +1159,7 @@ export const TranslateView: FC<TranslateViewProps> = ({
             onChange={handleDictFilterChange}
             aria-label="Filter offline vocabulary"
             placeholder="Filter words (coffee, mắc, left...)"
-            className="min-h-[42px] w-full rounded-xl border border-stone-200 bg-stone-50 pl-9 pr-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-[#0F766E] focus:bg-white focus:outline-none"
+            className="min-h-[42px] w-full rounded-xl border border-border bg-surface-subtle pl-9 pr-3 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:bg-surface focus:outline-none"
           />
         </div>
 
@@ -1155,8 +1174,11 @@ export const TranslateView: FC<TranslateViewProps> = ({
           ))}
         </div>
 
-        <div className="mt-3 max-h-[440px] divide-y divide-stone-100 overflow-y-auto pr-1">
-          {filteredDictionary.map((entry) => {
+        <div
+          ref={dictScrollRef}
+          className="mt-3 max-h-[440px] divide-y divide-border-subtle overflow-y-auto pr-1"
+        >
+          {renderedDictionary.map((entry) => {
             const text = getDictionaryEntryText(entry, settings.region);
             const isBusy =
               speakingState.activeText === text &&
@@ -1175,6 +1197,17 @@ export const TranslateView: FC<TranslateViewProps> = ({
               />
             );
           })}
+          {hasMoreDictEntries ? (
+            <div ref={dictSentinelRef} className="py-2.5 text-center">
+              <button
+                type="button"
+                onClick={loadMoreDictEntries}
+                className="inline-flex min-h-[36px] items-center justify-center rounded-lg border border-border bg-surface-subtle px-3 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
+              >
+                Show more ({String(filteredDictionary.length - visibleDictCount)} more)
+              </button>
+            </div>
+          ) : null}
         </div>
       </aside>
     </div>

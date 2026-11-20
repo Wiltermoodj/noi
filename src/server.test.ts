@@ -730,4 +730,91 @@ describe("Express TTS Server", () => {
     expect(diskHitRes.headers.get("X-TTS-Cache")).toBe("disk");
     expect(webFallback).toHaveBeenCalledTimes(3);
   });
+
+  it("evicts oldest memory cache entries when maxMemoryCacheBytes is exceeded", async () => {
+    const cacheDir = createTempCacheDir();
+    const fakeWav = Buffer.from(makeFakeWavBase64(), "base64"); // 204 bytes
+    const webFallback = vi.fn(async () => {
+      await Promise.resolve();
+      return { audioBuffer: fakeWav, contentType: "audio/wav" as const };
+    });
+
+    const { baseUrl, server } = await startTestServer({
+      aiClient: null,
+      apiKey: "",
+      webTtsFallback: webFallback,
+      diskCacheDir: cacheDir,
+      maxMemoryCacheEntries: 50,
+      maxMemoryCacheBytes: fakeWav.length * 2,
+    });
+    servers.push(server);
+
+    for (const phrase of ["Một", "Hai", "Ba"]) {
+      const res = await fetch(`${baseUrl}/api/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: phrase, region: "south" }),
+      });
+      expect(res.status).toBe(200);
+    }
+
+    const healthRes = await fetch(`${baseUrl}/healthz`);
+    expect(healthRes.status).toBe(200);
+    const health = (await healthRes.json()) as {
+      memoryCacheEntries: number;
+      memoryCacheBytes: number;
+    };
+    expect(health.memoryCacheEntries).toBe(2);
+    expect(health.memoryCacheBytes).toBeLessThanOrEqual(fakeWav.length * 2);
+  });
+
+  it("serves cached fallback clips during Gemini 429 model cooldown without consuming upstream miss quota", async () => {
+    const cacheDir = createTempCacheDir();
+    const fakeWav = Buffer.from(makeFakeWavBase64(), "base64");
+
+    const generateContent = vi.fn(async () => {
+      await Promise.resolve();
+      throw Object.assign(new Error('{"error":{"code":429,"message":"Rate limit exceeded"}}'), {
+        status: 429,
+      });
+    });
+    const webFallback = vi.fn(async () => {
+      await Promise.resolve();
+      return { audioBuffer: fakeWav, contentType: "audio/wav" as const };
+    });
+
+    const fakeAi = { models: { generateContent } } as unknown as GoogleGenAI;
+    const { baseUrl, server } = await startTestServer({
+      aiClient: fakeAi,
+      webTtsFallback: webFallback,
+      diskCacheDir: cacheDir,
+      maxMissesPerWindow: 1,
+    });
+    servers.push(server);
+
+    const firstRes = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Xin chào", region: "south" }),
+    });
+    expect(firstRes.status).toBe(200);
+    expect(firstRes.headers.get("X-TTS-Engine")).toBe("browser-regional");
+    expect(firstRes.headers.get("X-TTS-Cache")).toBe("miss");
+    // Both primary and fallback Gemini models threw 429 and entered cooldown
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(webFallback).toHaveBeenCalledTimes(1);
+
+    // Second request for the same phrase while models are in cooldown must hit memory cache
+    // directly without burning another upstream miss token (maxMissesPerWindow is 1)
+    const secondRes = await fetch(`${baseUrl}/api/tts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Xin chào", region: "south" }),
+    });
+    expect(secondRes.status).toBe(200);
+    expect(secondRes.headers.get("X-TTS-Cache")).toBe("memory");
+    expect(secondRes.headers.get("X-TTS-Engine")).toBe("browser-regional");
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(webFallback).toHaveBeenCalledTimes(1);
+  });
 });

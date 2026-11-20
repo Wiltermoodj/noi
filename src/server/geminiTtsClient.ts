@@ -170,6 +170,17 @@ export class GeminiTtsClient {
       .map(([model]) => model);
   }
 
+  hasAvailableModel(): boolean {
+    const ts = this.now();
+    for (const model of [PRIMARY_TTS_MODEL, FALLBACK_TTS_MODEL]) {
+      const blockedUntil = this.modelCooldownUntil.get(model) ?? 0;
+      if (blockedUntil <= ts) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   isAuthHealthy(): boolean {
     if (!this.authCooldown) return true;
     if (this.authCooldown.apiKey !== this.getApiKey() || this.now() >= this.authCooldown.until) {

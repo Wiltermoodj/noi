@@ -6,6 +6,7 @@ export interface AndroidTtsVoiceInfo {
   name: string;
   lang: string;
   localService: boolean;
+  quality?: number | undefined;
 }
 
 export interface AndroidPermissionResult {

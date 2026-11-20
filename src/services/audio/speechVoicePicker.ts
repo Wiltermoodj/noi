@@ -5,6 +5,7 @@ export interface SpeechVoiceInfo {
   name: string;
   lang: string;
   localService: boolean;
+  quality?: number | undefined;
 }
 
 export interface VoiceInventory {
@@ -21,7 +22,8 @@ const FEMALE_VOICE_REGEX =
   /\bhoaimy\b|\bhoài mỹ\b|\blinh\b|\bmai\b|\blan\b|\bmy\b|\bthu\b|\bchi\b|\bngọc\b|\bngoc\b|\bfemale\b|\bnữ\b|vie-f|vi-vn-x-vic|vi-vn-x-vie/i;
 const MALE_VOICE_REGEX =
   /\bnamminh\b|\bnam minh\b|\bminh\b|\ban\b|\btuấn\b|\btuan\b|\bhùng\b|\bhung\b|\bnam\b|\bmale\b|vi-vn-x-vid|vi-vn-x-vif|vi-vn-x-gft/i;
-const NATURAL_VOICE_REGEX = /natural|neural|enhanced|premium|wavenet|online|google/i;
+const NATURAL_VOICE_REGEX = /natural|neural|enhanced|premium|wavenet|online|google|siri|high/i;
+const LOW_QUALITY_VOICE_REGEX = /\bespeak\b|\bcompact\b|\blegacy\b/i;
 
 function matchVoiceByProfile<T extends { name: string; voiceURI?: string }>(
   candidates: T[],
@@ -33,17 +35,62 @@ function matchVoiceByProfile<T extends { name: string; voiceURI?: string }>(
   return matched.length > 0 ? matched : candidates;
 }
 
-function matchRegionalVoiceByName<T extends { name: string }>(
-  candidates: T[],
-  region: DialectRegion,
-): T | null {
-  if (region === "south") {
-    return candidates.find((v) => SOUTH_VOICE_REGEX.test(v.name)) ?? null;
+function getRegionRegex(region: DialectRegion): RegExp {
+  if (region === "south") return SOUTH_VOICE_REGEX;
+  if (region === "central") return CENTRAL_VOICE_REGEX;
+  return NORTH_VOICE_REGEX;
+}
+
+function matchRegionalVoiceByName<
+  T extends {
+    name: string;
+    voiceURI?: string;
+    localService?: boolean;
+    quality?: number | undefined;
+  },
+>(candidates: T[], region: DialectRegion, preferLocal = false): T | null {
+  const regex = getRegionRegex(region);
+  const regionalMatches = candidates.filter((v) => regex.test(`${v.name} ${v.voiceURI ?? ""}`));
+  if (regionalMatches.length === 0) return null;
+  if (regionalMatches.length === 1) return regionalMatches[0] ?? null;
+  const ranked = [...regionalMatches].sort(
+    (a, b) => scoreVoiceFidelity(b, preferLocal) - scoreVoiceFidelity(a, preferLocal),
+  );
+  return ranked[0] ?? null;
+}
+
+function scoreVoiceFidelity(
+  voice: {
+    name: string;
+    voiceURI?: string;
+    localService?: boolean;
+    quality?: number | undefined;
+  },
+  preferLocal: boolean,
+): number {
+  const descriptor = `${voice.name} ${voice.voiceURI ?? ""}`;
+  let score = 0;
+  if (preferLocal && voice.localService) {
+    score += 40;
+  } else if (voice.localService) {
+    score += 10;
   }
-  if (region === "central") {
-    return candidates.find((v) => CENTRAL_VOICE_REGEX.test(v.name)) ?? null;
+  if (NATURAL_VOICE_REGEX.test(descriptor)) {
+    score += 25;
   }
-  return candidates.find((v) => NORTH_VOICE_REGEX.test(v.name)) ?? null;
+  if (typeof voice.quality === "number" && Number.isFinite(voice.quality)) {
+    if (voice.quality >= 500) {
+      score += 35;
+    } else if (voice.quality >= 400) {
+      score += 20;
+    } else if (voice.quality < 300) {
+      score -= 15;
+    }
+  }
+  if (LOW_QUALITY_VOICE_REGEX.test(descriptor)) {
+    score -= 30;
+  }
+  return score;
 }
 
 export function getBrowserSpeechPitch(
@@ -88,20 +135,28 @@ export function pickBrowserVoice(
     langPrefix === "vi" ? matchVoiceByProfile(allCandidates, voiceProfile) : allCandidates;
 
   if (langPrefix === "vi" && region) {
-    const matched = matchRegionalVoiceByName(candidates, region);
+    const matched = matchRegionalVoiceByName(candidates, region, isOffline);
     if (matched) return matched;
   }
 
   if (isOffline) {
-    const localFirst = candidates.find((v) => v.localService);
-    return localFirst ?? candidates[0] ?? null;
+    const localCandidates = candidates.filter((v) => v.localService);
+    const pool = localCandidates.length > 0 ? localCandidates : candidates;
+    const ranked = [...pool].sort(
+      (a, b) => scoreVoiceFidelity(b, true) - scoreVoiceFidelity(a, true),
+    );
+    return ranked[0] ?? null;
   }
 
-  const naturalVoice = candidates.find((v) => NATURAL_VOICE_REGEX.test(v.name));
+  const naturalVoice = candidates.find(
+    (v) => NATURAL_VOICE_REGEX.test(v.name) && !LOW_QUALITY_VOICE_REGEX.test(v.name),
+  );
   if (naturalVoice) return naturalVoice;
 
-  const localFirst = candidates.find((v) => v.localService);
-  return localFirst ?? candidates[0] ?? null;
+  const localFirst = candidates.find(
+    (v) => v.localService && !LOW_QUALITY_VOICE_REGEX.test(v.name),
+  );
+  return localFirst ?? candidates.find((v) => v.localService) ?? candidates[0] ?? null;
 }
 
 export function pickNativeAndroidVoice(
@@ -120,8 +175,11 @@ export function pickNativeAndroidVoice(
   const candidates =
     langPrefix === "vi" ? matchVoiceByProfile(allCandidates, voiceProfile) : allCandidates;
   if (langPrefix === "vi" && region) {
-    const regional = matchRegionalVoiceByName(candidates, region);
+    const regional = matchRegionalVoiceByName(candidates, region, true);
     if (regional) return regional;
   }
-  return candidates.find((v) => v.localService) ?? candidates[0] ?? null;
+  const ranked = [...candidates].sort(
+    (a, b) => scoreVoiceFidelity(b, true) - scoreVoiceFidelity(a, true),
+  );
+  return ranked[0] ?? null;
 }

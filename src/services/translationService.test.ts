@@ -379,6 +379,41 @@ describe("Offline bidirectional translation", () => {
     expect(brothPhrase?.north).toContain("Nước dùng");
     expect(brothPhrase?.south).toContain("Nước lèo");
   });
+
+  it("includes đúng rồi and daily conversational snippets across regions", () => {
+    const dungRoiPhrase = INITIAL_PHRASES.find((p) => p.id === "p241");
+    expect(dungRoiPhrase?.north).toBe("Đúng rồi!");
+    expect(dungRoiPhrase?.central).toBe("Đúng rồi!");
+    expect(dungRoiPhrase?.south).toBe("Đúng rồi!");
+    expect(dungRoiPhrase?.category).toBe("Conversation");
+
+    const dungRoiViEn = translateOffline("đúng rồi", "vi-en", "south", INITIAL_PHRASES);
+    expect(dungRoiViEn?.primaryTranslation.toLowerCase()).toContain("that's right");
+    expect(dungRoiViEn?.matchedPhrases.some((p) => p.id === "p241")).toBe(true);
+
+    const dungRoiEnVi = translateOffline("that's right", "en-vi", "north", INITIAL_PHRASES);
+    expect(dungRoiEnVi?.primaryTranslation.toLowerCase()).toContain("đúng rồi");
+
+    expect(
+      translateOffline("no wonder", "en-vi", "north", INITIAL_PHRASES)?.primaryTranslation,
+    ).toBe("thảo nào");
+    expect(
+      translateOffline("no wonder", "en-vi", "central", INITIAL_PHRASES)?.primaryTranslation,
+    ).toBe("hèn chi");
+    expect(
+      translateOffline("no wonder", "en-vi", "south", INITIAL_PHRASES)?.primaryTranslation,
+    ).toBe("hèn gì");
+
+    expect(
+      translateOffline("oh really", "en-vi", "north", INITIAL_PHRASES)?.primaryTranslation,
+    ).toBe("thế à");
+    expect(
+      translateOffline("oh really", "en-vi", "central", INITIAL_PHRASES)?.primaryTranslation,
+    ).toBe("rứa hả");
+    expect(
+      translateOffline("oh really", "en-vi", "south", INITIAL_PHRASES)?.primaryTranslation,
+    ).toBe("vậy hả");
+  });
 });
 
 describe("Priority study queue sorting and spaced review", () => {

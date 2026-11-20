@@ -27,13 +27,20 @@ export function getOrCreateSharedAudioContext(): AudioContext | null {
   ) {
     return sharedAudioContext;
   }
-  sharedAudioContext = new Ctor();
-  sharedAudioContextCtor = Ctor;
-  return sharedAudioContext;
+  try {
+    sharedAudioContext = new Ctor();
+    sharedAudioContextCtor = Ctor;
+    return sharedAudioContext;
+  } catch {
+    sharedAudioContext = null;
+    sharedAudioContextCtor = null;
+    return null;
+  }
 }
 
 export async function resumeSharedAudioContext(ctx: AudioContext): Promise<void> {
-  if (ctx.state === "suspended") {
+  const state = ctx.state as string;
+  if (state === "suspended" || state === "interrupted") {
     await ctx.resume().catch(() => undefined);
   }
 }

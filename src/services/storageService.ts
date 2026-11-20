@@ -22,6 +22,7 @@ const MINUTE_MS = 60 * 1000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
 const VALID_REGIONS = new Set<DialectRegion>(DIALECT_REGIONS);
+const VALID_THEMES = new Set<AppSettings["theme"]>(["system", "light", "dark"]);
 const VALID_TTS_SOURCES = new Set<AppSettings["ttsSource"]>(["cloud-first", "device-only"]);
 const VALID_VOICE_PROFILES = new Set<AppSettings["ttsVoiceProfile"]>(["auto", "female", "male"]);
 const VALID_CATEGORIES = new Set<Phrase["category"]>(PHRASE_CATEGORIES);
@@ -56,6 +57,15 @@ function sanitizeTtsVoiceProfile(
   return typeof value === "string" &&
     VALID_VOICE_PROFILES.has(value as AppSettings["ttsVoiceProfile"])
     ? (value as AppSettings["ttsVoiceProfile"])
+    : fallback;
+}
+
+function sanitizeThemePreference(
+  value: unknown,
+  fallback: AppSettings["theme"],
+): AppSettings["theme"] {
+  return typeof value === "string" && VALID_THEMES.has(value as AppSettings["theme"])
+    ? (value as AppSettings["theme"])
     : fallback;
 }
 
@@ -141,6 +151,7 @@ export function normalizePlaybackSpeed(value: unknown, fallback = DEFAULT_PLAYBA
 
 export const DEFAULT_SETTINGS: AppSettings = {
   region: "south",
+  theme: "system",
   autoPlayBoth: false,
   playbackSpeed: DEFAULT_PLAYBACK_SPEED,
   slowVietnamese: false,
@@ -162,6 +173,7 @@ export function parseSettingsFromRaw(raw: string | null): AppSettings {
     const playbackSpeed = normalizePlaybackSpeed(obj["playbackSpeed"], legacySpeed);
     return {
       region: sanitizeDialectRegion(obj["region"], DEFAULT_SETTINGS.region),
+      theme: sanitizeThemePreference(obj["theme"], DEFAULT_SETTINGS.theme),
       autoPlayBoth:
         typeof obj["autoPlayBoth"] === "boolean"
           ? obj["autoPlayBoth"]

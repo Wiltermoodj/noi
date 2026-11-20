@@ -25,6 +25,8 @@ const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 let installListenerInitialized = false;
 let swInitialized = false;
+let swUpdateIntervalId: number | null = null;
+let swOnlineHandler: (() => void) | null = null;
 let applyUpdateFn: ((reloadPage?: boolean) => Promise<void>) | null = null;
 
 const installListeners = new Set<Listener>();
@@ -167,14 +169,20 @@ export function getPWAInstallSnapshot(): PWAInstallSnapshot {
 export async function promptPWAInstall(): Promise<boolean> {
   if (!deferredPrompt) return false;
   const activePrompt = deferredPrompt;
-  await activePrompt.prompt();
-  const { outcome } = await activePrompt.userChoice;
-  if (outcome === "accepted") {
+  try {
+    await activePrompt.prompt();
+    const { outcome } = await activePrompt.userChoice;
+    if (outcome === "accepted") {
+      deferredPrompt = null;
+      setInstalledState(true);
+      return true;
+    }
+    return false;
+  } catch {
     deferredPrompt = null;
-    setInstalledState(true);
-    return true;
+    emitInstallChange();
+    return false;
   }
-  return false;
 }
 
 export function initPWAServiceWorker(): void {
@@ -193,11 +201,21 @@ export function initPWAServiceWorker(): void {
     },
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
+      if (swUpdateIntervalId !== null) {
+        window.clearInterval(swUpdateIntervalId);
+        swUpdateIntervalId = null;
+      }
+      if (swOnlineHandler) {
+        window.removeEventListener("online", swOnlineHandler);
+        swOnlineHandler = null;
+      }
       const checkForUpdate = () => {
         if (typeof navigator !== "undefined" && !navigator.onLine) return;
+        if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
         void registration.update().catch(() => undefined);
       };
-      window.setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+      swUpdateIntervalId = window.setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+      swOnlineHandler = checkForUpdate;
       window.addEventListener("online", checkForUpdate);
     },
     onRegisterError(error) {

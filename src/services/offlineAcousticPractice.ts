@@ -54,48 +54,142 @@ export function isOfflineAcousticPracticeSupported(): boolean {
   return hasNavigatorGetUserMedia() && getSharedAudioContextConstructor() !== null;
 }
 
+function computeExactNormalizedAutocorr(
+  buffer: Float32Array,
+  prefixSq: Float64Array,
+  lag: number,
+): number {
+  const size = buffer.length;
+  const limit = size - lag;
+  const normA = prefixSq[limit] ?? 0;
+  const normB = (prefixSq[size] ?? 0) - (prefixSq[lag] ?? 0);
+  if (normA <= 0 || normB <= 0) return 0;
+
+  let corr = 0;
+  for (let i = 0; i < limit; i++) {
+    corr += (buffer[i] ?? 0) * (buffer[i + lag] ?? 0);
+  }
+  return corr / Math.sqrt(normA * normB);
+}
+
+function buildPrefixSquares(buffer: Float32Array): { prefixSq: Float64Array; totalSq: number } {
+  const size = buffer.length;
+  const prefixSq = new Float64Array(size + 1);
+  let runningSq = 0;
+  for (let i = 0; i < size; i++) {
+    const val = buffer[i] ?? 0;
+    runningSq += val * val;
+    prefixSq[i + 1] = runningSq;
+  }
+  return { prefixSq, totalSq: runningSq };
+}
+
+function computeCoarseAutocorr(
+  buffer: Float32Array,
+  prefixSq: Float64Array,
+  lag: number,
+  innerStride: number,
+): number {
+  const size = buffer.length;
+  const limit = size - lag;
+  const normA = prefixSq[limit] ?? 0;
+  const normB = (prefixSq[size] ?? 0) - (prefixSq[lag] ?? 0);
+  if (normA <= 0 || normB <= 0) return -1;
+
+  let corr = 0;
+  for (let i = 0; i < limit; i += innerStride) {
+    corr += (buffer[i] ?? 0) * (buffer[i + lag] ?? 0);
+  }
+  return (corr * innerStride) / Math.sqrt(normA * normB);
+}
+
+function findCoarsePitchCandidates(
+  buffer: Float32Array,
+  prefixSq: Float64Array,
+  minLag: number,
+  maxLag: number,
+): number[] {
+  const coarseStep = maxLag - minLag > 120 ? 2 : 1;
+  const innerStride = buffer.length >= 1024 ? 2 : 1;
+  const count = Math.floor((maxLag - minLag) / coarseStep) + 1;
+  const corrs = new Float32Array(count);
+  let globalMaxCorr = -1;
+  let globalMaxLag = -1;
+
+  for (let idx = 0; idx < count; idx++) {
+    const lag = minLag + idx * coarseStep;
+    const normalized = computeCoarseAutocorr(buffer, prefixSq, lag, innerStride);
+    corrs[idx] = normalized;
+    if (normalized > globalMaxCorr) {
+      globalMaxCorr = normalized;
+      globalMaxLag = lag;
+    }
+  }
+
+  if (globalMaxCorr < 0.48 || globalMaxLag <= 0) return [];
+
+  // Pick the first local peak (smallest lag = true fundamental) close to globalMaxCorr
+  // to avoid octave/sub-harmonic errors (2T, 3T, ...) on higher voices and rising tones.
+  const peakThreshold = Math.max(0.5, globalMaxCorr * 0.92);
+  for (let idx = 0; idx < count; idx++) {
+    const val = corrs[idx] ?? -1;
+    if (val < peakThreshold) continue;
+    const prev = idx > 0 ? (corrs[idx - 1] ?? -1) : -1;
+    const next = idx + 1 < count ? (corrs[idx + 1] ?? -1) : -1;
+    if (val >= prev && val >= next) {
+      return [minLag + idx * coarseStep];
+    }
+  }
+
+  return [globalMaxLag];
+}
+
+function refinePitchCandidates(
+  buffer: Float32Array,
+  prefixSq: Float64Array,
+  candidates: number[],
+  minLag: number,
+  maxLag: number,
+): { bestLag: number; bestCorr: number } {
+  let bestLag = -1;
+  let bestCorr = 0;
+  const checkedLags = new Set<number>();
+
+  for (const center of candidates) {
+    const start = Math.max(minLag, center - 3);
+    const end = Math.min(maxLag, center + 3);
+    for (let lag = start; lag <= end; lag++) {
+      if (checkedLags.has(lag)) continue;
+      checkedLags.add(lag);
+      const normalized = computeExactNormalizedAutocorr(buffer, prefixSq, lag);
+      if (normalized > bestCorr) {
+        bestCorr = normalized;
+        bestLag = lag;
+      }
+    }
+  }
+
+  return { bestLag, bestCorr };
+}
+
 export function detectPitchHz(
   buffer: Float32Array,
   sampleRate: number,
   precomputedRms?: number,
 ): number | null {
   const size = buffer.length;
-  let rms = precomputedRms ?? 0;
-  if (precomputedRms === undefined) {
-    for (let i = 0; i < size; i++) {
-      const val = buffer[i] ?? 0;
-      rms += val * val;
-    }
-    rms = Math.sqrt(rms / size);
-  }
+  if (size < 4) return null;
+
+  const { prefixSq, totalSq } = buildPrefixSquares(buffer);
+  const rms = precomputedRms ?? Math.sqrt(totalSq / size);
   if (rms < 0.015) return null;
 
   const minLag = Math.floor(sampleRate / 420);
   const maxLag = Math.min(Math.floor(sampleRate / 65), Math.floor(size / 2));
   if (maxLag <= minLag) return null;
 
-  let bestLag = -1;
-  let bestCorr = 0;
-
-  for (let lag = minLag; lag <= maxLag; lag++) {
-    let corr = 0;
-    let normA = 0;
-    let normB = 0;
-    const limit = size - lag;
-    for (let i = 0; i < limit; i++) {
-      const a = buffer[i] ?? 0;
-      const b = buffer[i + lag] ?? 0;
-      corr += a * b;
-      normA += a * a;
-      normB += b * b;
-    }
-    const denom = Math.sqrt(normA * normB);
-    const normalized = denom > 0 ? corr / denom : 0;
-    if (normalized > bestCorr) {
-      bestCorr = normalized;
-      bestLag = lag;
-    }
-  }
+  const candidates = findCoarsePitchCandidates(buffer, prefixSq, minLag, maxLag);
+  const { bestLag, bestCorr } = refinePitchCandidates(buffer, prefixSq, candidates, minLag, maxLag);
 
   if (bestCorr < 0.52 || bestLag <= 0) return null;
   return sampleRate / bestLag;
@@ -346,6 +440,7 @@ export function evaluateAcousticToneMatch(
 const RECORDER_STOP_TIMEOUT_MS = 1500;
 const MAX_RECORDING_DURATION_MS = 20_000;
 const PITCH_SAMPLE_INTERVAL_MS = 32;
+const LIVE_LEVEL_CALLBACK_INTERVAL_MS = 60;
 const PREFERRED_RECORDER_MIME_TYPES = [
   "audio/webm;codecs=opus",
   "audio/webm",
@@ -513,6 +608,7 @@ export function startOfflineAcousticSession(
   const maxDurationMs = Math.max(2000, options?.maxDurationMs ?? MAX_RECORDING_DURATION_MS);
   let firstSpeechAtMs: number | null = null;
   let lastSpeechAtMs: number | null = null;
+  let lastLiveLevelAtMs = -LIVE_LEVEL_CALLBACK_INTERVAL_MS;
 
   const stopSamplingLoop = () => {
     if (sampleIntervalId !== null && typeof window !== "undefined") {
@@ -622,7 +718,10 @@ export function startOfflineAcousticSession(
     const rms = Math.sqrt(sumSq / timeDomain.length);
     const hz = detectPitchHz(timeDomain, sampleRate, rms);
     samples.push({ timeMs: elapsedMs, rms, hz });
-    callbacks.onLiveLevel(Math.min(1, rms * 6), hz);
+    if (elapsedMs - lastLiveLevelAtMs >= LIVE_LEVEL_CALLBACK_INTERVAL_MS) {
+      lastLiveLevelAtMs = elapsedMs;
+      callbacks.onLiveLevel(Math.min(1, rms * 6), hz);
+    }
 
     if (rms >= 0.022 && hz !== null) {
       firstSpeechAtMs ??= elapsedMs;

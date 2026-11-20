@@ -15,11 +15,12 @@ import {
   Trash2,
   Volume2,
 } from "lucide-react";
-import type { ChangeEvent, FC } from "react";
-import { useCallback, useId, useMemo, useState } from "react";
+import type { ChangeEvent, FC, RefObject } from "react";
+import { memo, useCallback, useDeferredValue, useId, useMemo, useState } from "react";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
+import { useProgressiveRenderCount } from "../hooks/useProgressiveRenderCount";
 import { useSpeakingStatus } from "../hooks/useSpeakingStatus";
-import { audioService } from "../services/audioService";
+import { audioService, type SpeakingStatus } from "../services/audioService";
 import {
   buildPersonalPhrasebook,
   filterPersonalPhrasebook,
@@ -45,7 +46,7 @@ import {
 } from "../types/vietnamese";
 import { AddPhraseModal } from "./AddPhraseModal";
 import { AudioErrorBanner } from "./AudioErrorBanner";
-import { PracticePanel } from "./PracticePanel";
+import { LazyPracticePanel } from "./LazyPracticePanel";
 import { PronunciationTipsCard } from "./PronunciationTipsCard";
 import { RegionIcon } from "./RegionIcon";
 import { SearchBar } from "./SearchBar";
@@ -116,7 +117,7 @@ const KindTabButton: FC<KindTabButtonProps> = ({ id, label, count, active, onSel
       type="button"
       onClick={handleClick}
       className={`min-h-[34px] whitespace-nowrap rounded-lg px-3 text-xs font-medium tabular-nums transition-colors ${
-        active ? "bg-white text-stone-900 shadow-xs" : "text-stone-600 hover:text-stone-900"
+        active ? "bg-surface text-ink shadow-xs" : "text-ink-secondary hover:text-ink"
       }`}
     >
       {label} ({count})
@@ -148,18 +149,18 @@ const RegionalVariantDetailButton: FC<RegionalVariantDetailButtonProps> = ({
       onClick={handleClick}
       className={`flex min-h-[44px] items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors ${
         active
-          ? "border-[#0F766E]/40 bg-white text-stone-900"
-          : "border-stone-200 bg-white/80 text-stone-700 hover:bg-white"
+          ? "border-accent-border bg-surface text-ink"
+          : "border-border bg-surface/80 text-ink-secondary hover:bg-surface"
       }`}
     >
       <div className="min-w-0">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium text-stone-500">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium text-ink-muted">
           <RegionIcon region={region} className="h-4 w-4" />
           <span>{meta.label}</span>
         </span>
-        <span className="mt-0.5 block truncate text-xs font-semibold text-stone-900">{text}</span>
+        <span className="mt-0.5 block truncate text-xs font-semibold text-ink">{text}</span>
       </div>
-      <Volume2 className="h-3.5 w-3.5 shrink-0 text-[#0F766E]" aria-hidden="true" />
+      <Volume2 className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" />
     </button>
   );
 };
@@ -193,10 +194,10 @@ const PhrasebookRowDetails: FC<PhrasebookRowDetailsProps> = ({
   onDelete,
   onOpenPronunciationGuide,
 }) => (
-  <div className="mt-3 space-y-3 rounded-xl bg-stone-50 p-3.5 text-left">
+  <div className="mt-3 space-y-3 rounded-xl bg-surface-subtle p-3.5 text-left">
     {item.hasRegionalDiff ? (
       <div>
-        <p className="mb-1.5 text-xs font-medium text-stone-500">Across Vietnam</p>
+        <p className="mb-1.5 text-xs font-medium text-ink-muted">Across Vietnam</p>
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
           {DIALECT_REGIONS.map((r) => (
             <RegionalVariantDetailButton
@@ -213,18 +214,18 @@ const PhrasebookRowDetails: FC<PhrasebookRowDetailsProps> = ({
 
     {!item.isCustom && item.textbook && item.textbook.trim().length > 0 ? (
       <div>
-        <p className="text-xs font-medium text-stone-500">Textbook says</p>
-        <p className="mt-0.5 text-sm text-stone-700 line-through decoration-stone-400">
+        <p className="text-xs font-medium text-ink-muted">Textbook says</p>
+        <p className="mt-0.5 text-sm text-ink-secondary line-through decoration-ink-faint">
           {item.textbook}
         </p>
       </div>
     ) : null}
 
     <div>
-      <p className="text-xs font-medium text-[#0F766E]">
+      <p className="text-xs font-medium text-accent">
         {item.kind === "phrase" ? "Real spoken Vietnamese" : "Usage note"}
       </p>
-      <p className="mt-0.5 text-sm leading-relaxed text-stone-800">{item.note}</p>
+      <p className="mt-0.5 text-sm leading-relaxed text-ink">{item.note}</p>
     </div>
 
     <PronunciationTipsCard
@@ -233,19 +234,19 @@ const PhrasebookRowDetails: FC<PhrasebookRowDetailsProps> = ({
       maxTips={2}
       compact
       onOpenGuide={onOpenPronunciationGuide}
-      className="border-t border-stone-200/80 pt-3"
+      className="border-t border-border pt-3"
     />
 
-    <div className="flex flex-wrap items-center gap-2 border-t border-stone-200/80 pt-2.5">
+    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2.5">
       <button
         type="button"
         onClick={onCopy}
-        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-100"
+        className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-muted"
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-[#0F766E]" aria-hidden="true" />
+          <Check className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
         ) : (
-          <Copy className="h-3.5 w-3.5 text-stone-500" aria-hidden="true" />
+          <Copy className="h-3.5 w-3.5 text-ink-muted" aria-hidden="true" />
         )}
         <span>{copied ? "Copied" : "Copy"}</span>
       </button>
@@ -255,8 +256,8 @@ const PhrasebookRowDetails: FC<PhrasebookRowDetailsProps> = ({
         onClick={onSpeakBoth}
         className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors ${
           isBusy
-            ? "border-[#0F766E] bg-[#0F766E] text-white"
-            : "border-stone-200 bg-white text-stone-700 hover:bg-stone-100"
+            ? "border-accent bg-accent text-accent-fg"
+            : "border-border bg-surface text-ink-secondary hover:bg-surface-muted"
         }`}
       >
         {isBusy ? (
@@ -272,7 +273,7 @@ const PhrasebookRowDetails: FC<PhrasebookRowDetailsProps> = ({
           <button
             type="button"
             onClick={onEdit}
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-100"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-muted"
           >
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Edit</span>
@@ -281,7 +282,7 @@ const PhrasebookRowDetails: FC<PhrasebookRowDetailsProps> = ({
             type="button"
             onClick={onDelete}
             aria-label={`Delete custom phrase ${item.english}`}
-            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50"
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-danger-border bg-surface px-2.5 text-xs font-medium text-danger-ink transition-colors hover:bg-danger-soft"
           >
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Delete</span>
@@ -307,7 +308,7 @@ interface PhrasebookRowProps {
   onNotify: (message: string) => void;
 }
 
-const PhrasebookRow: FC<PhrasebookRowProps> = ({
+const PhrasebookRowBase: FC<PhrasebookRowProps> = ({
   item,
   settings,
   isBusy,
@@ -389,11 +390,11 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
   );
 
   return (
-    <div className="p-4 transition-colors hover:bg-stone-50/70">
+    <div className="p-4 transition-colors hover:bg-surface-subtle">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" onClick={handleSpeakVi} className="min-w-0 flex-1 text-left">
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-stone-500">
-            <span className="font-medium text-stone-700">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-ink-muted">
+            <span className="font-medium text-ink-secondary">
               {item.kind === "phrase" ? "Phrase" : "Word"}
             </span>
             <span aria-hidden="true">·</span>
@@ -401,7 +402,7 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
             {item.isCustom ? (
               <>
                 <span aria-hidden="true">·</span>
-                <span className="font-medium text-[#0F766E]">Custom</span>
+                <span className="font-medium text-accent">Custom</span>
               </>
             ) : null}
             {item.starredAt > 0 ? (
@@ -412,9 +413,9 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
             ) : null}
           </div>
 
-          <p className="mt-1 font-display text-base font-semibold text-stone-900">{vi}</p>
-          <p className="mt-0.5 text-xs italic text-[#0F766E]/90">{phonetic}</p>
-          <p className="mt-0.5 text-sm text-stone-600">{item.english}</p>
+          <p className="mt-1 font-display text-base font-semibold text-ink">{vi}</p>
+          <p className="mt-0.5 text-xs italic text-accent">{phonetic}</p>
+          <p className="mt-0.5 text-sm text-ink-secondary">{item.english}</p>
         </button>
 
         <div className="flex shrink-0 items-center justify-end gap-1">
@@ -426,8 +427,8 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
             title="Practice"
             className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl transition-colors ${
               practiceOpen
-                ? "bg-[#0F766E]/10 text-[#0F766E]"
-                : "text-stone-400 hover:bg-stone-100 hover:text-stone-900"
+                ? "bg-accent-soft text-accent"
+                : "text-ink-faint hover:bg-surface-muted hover:text-ink"
             }`}
           >
             <Mic className="h-4 w-4" aria-hidden="true" />
@@ -438,7 +439,7 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
             onClick={handleShowBig}
             aria-label={`Show large text for ${item.english}`}
             title="Show to Local"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-900"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-faint transition-colors hover:bg-surface-muted hover:text-ink"
           >
             <Maximize2 className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -449,9 +450,9 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
             aria-pressed
             aria-label={`Remove ${item.english} from Saved`}
             title="Remove from Saved"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-amber-500 transition-colors hover:bg-amber-50 hover:text-amber-600"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-star transition-colors hover:bg-star-soft hover:text-star-ink"
           >
-            <Star className="h-4 w-4 fill-amber-400" aria-hidden="true" />
+            <Star className="h-4 w-4 fill-star-fill" aria-hidden="true" />
           </button>
 
           <button
@@ -462,8 +463,8 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
             title="Notes & options"
             className={`flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl transition-colors ${
               showDetails
-                ? "bg-[#0F766E]/10 text-[#0F766E]"
-                : "text-stone-400 hover:bg-stone-100 hover:text-stone-900"
+                ? "bg-accent-soft text-accent"
+                : "text-ink-faint hover:bg-surface-muted hover:text-ink"
             }`}
           >
             <Info className="h-4 w-4" aria-hidden="true" />
@@ -472,7 +473,7 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
       </div>
 
       {practiceOpen ? (
-        <PracticePanel
+        <LazyPracticePanel
           key={`${item.uid}-${region}`}
           phraseText={vi}
           region={region}
@@ -504,6 +505,107 @@ const PhrasebookRow: FC<PhrasebookRowProps> = ({
   );
 };
 
+const PhrasebookRow = memo(PhrasebookRowBase);
+
+interface SavedItemsListProps {
+  visibleItems: PhrasebookItem[];
+  renderedItems: PhrasebookItem[];
+  renderedItemCount: number;
+  hasMoreSavedItems: boolean;
+  savedSentinelRef: RefObject<HTMLDivElement | null>;
+  settings: AppSettings;
+  speakingState: SpeakingStatus;
+  onResetFilters: () => void;
+  onLoadMore: () => void;
+  onChangeRegion: (region: DialectRegion) => void;
+  onSpeakRegionText: (text: string, region: DialectRegion) => void;
+  onUnstarItem: (item: PhrasebookItem) => void;
+  onEditCustomItem: (id: string) => void;
+  onDeleteCustomPhrase: (id: string) => void;
+  onRecordPractice: (id: string, accuracy: number) => void;
+  onShowBig: (payload: ShowBigPayload) => void;
+  onOpenPronunciationGuide: () => void;
+  onNotify: (message: string, onUndo?: () => void) => void;
+}
+
+const SavedItemsList: FC<SavedItemsListProps> = ({
+  visibleItems,
+  renderedItems,
+  renderedItemCount,
+  hasMoreSavedItems,
+  savedSentinelRef,
+  settings,
+  speakingState,
+  onResetFilters,
+  onLoadMore,
+  onChangeRegion,
+  onSpeakRegionText,
+  onUnstarItem,
+  onEditCustomItem,
+  onDeleteCustomPhrase,
+  onRecordPractice,
+  onShowBig,
+  onOpenPronunciationGuide,
+  onNotify,
+}) => {
+  if (visibleItems.length === 0) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface p-8 text-center">
+        <p className="text-sm font-medium text-ink">No saved items match your current filters.</p>
+        <button
+          type="button"
+          onClick={onResetFilters}
+          className="mt-4 inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border px-4 text-xs font-medium text-ink-secondary hover:bg-surface-subtle"
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>Reset Filters</span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+      {renderedItems.map((item) => {
+        const text = getPhrasebookItemText(item, settings.region);
+        const isBusy =
+          speakingState.activeText === text &&
+          speakingState.activeRegion === settings.region &&
+          (speakingState.isSpeaking || speakingState.isLoading);
+
+        return (
+          <PhrasebookRow
+            key={item.uid}
+            item={item}
+            settings={settings}
+            isBusy={isBusy}
+            onChangeRegion={onChangeRegion}
+            onSpeakRegionText={onSpeakRegionText}
+            onUnstarItem={onUnstarItem}
+            onEditCustomItem={onEditCustomItem}
+            onDeleteCustomPhrase={onDeleteCustomPhrase}
+            onRecordPractice={onRecordPractice}
+            onShowBig={onShowBig}
+            onOpenPronunciationGuide={onOpenPronunciationGuide}
+            onNotify={onNotify}
+          />
+        );
+      })}
+      {hasMoreSavedItems ? (
+        <div ref={savedSentinelRef} className="p-3 text-center">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-border bg-surface-subtle px-4 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
+          >
+            Show more saved items ({String(visibleItems.length - renderedItemCount)} remaining)
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 interface PhrasebookEmptyStateProps {
   onBrowsePhrases: () => void;
   onBrowseTranslate: () => void;
@@ -513,14 +615,14 @@ const PhrasebookEmptyState: FC<PhrasebookEmptyStateProps> = ({
   onBrowsePhrases,
   onBrowseTranslate,
 }) => (
-  <section className="rounded-2xl border border-stone-200 bg-white p-8 text-center">
-    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
-      <Star className="h-6 w-6 fill-amber-400" aria-hidden="true" />
+  <section className="rounded-2xl border border-border bg-surface p-8 text-center">
+    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-star-soft text-star">
+      <Star className="h-6 w-6 fill-star-fill" aria-hidden="true" />
     </div>
-    <h2 className="mt-4 font-display text-lg font-semibold text-stone-900">
+    <h2 className="mt-4 font-display text-lg font-semibold text-ink">
       No saved phrases or words yet
     </h2>
-    <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-stone-600">
+    <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-ink-secondary">
       Tap the star on any study card, library phrase, or dictionary word to keep your go-to
       expressions together for quick offline reference.
     </p>
@@ -529,15 +631,15 @@ const PhrasebookEmptyState: FC<PhrasebookEmptyStateProps> = ({
       <button
         type="button"
         onClick={onBrowsePhrases}
-        className="inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
+        className="inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle"
       >
-        <BookOpen className="h-4 w-4 text-[#0F766E]" aria-hidden="true" />
+        <BookOpen className="h-4 w-4 text-accent" aria-hidden="true" />
         <span>Browse Library</span>
       </button>
       <button
         type="button"
         onClick={onBrowseTranslate}
-        className="inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-xl bg-stone-900 px-4 text-sm font-medium text-white transition-colors hover:bg-stone-800"
+        className="inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-xl bg-surface-inverse px-4 text-sm font-medium text-ink-inverse transition-colors hover:opacity-90"
       >
         <Languages className="h-4 w-4" aria-hidden="true" />
         <span>Explore Vocabulary</span>
@@ -565,6 +667,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
   onBrowseTranslate,
 }) => {
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [kindFilter, setKindFilter] = useState<PhrasebookKindFilter>("all");
   const [topicFilter, setTopicFilter] = useState<PhrasebookTopicFilter>("all");
   const [customOnly, setCustomOnly] = useState(false);
@@ -606,7 +709,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
 
   const visibleItems = useMemo(() => {
     const filtered = filterPersonalPhrasebook(allStarredItems, {
-      search,
+      search: deferredSearch,
       kind: kindFilter,
       topic: topicFilter,
       priority: customOnly ? "custom" : "all",
@@ -616,13 +719,30 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
   }, [
     allStarredItems,
     customOnly,
+    deferredSearch,
     kindFilter,
     regionalDiffOnly,
-    search,
     settings.region,
     sortBy,
     topicFilter,
   ]);
+
+  const {
+    visibleCount: renderedItemCount,
+    hasMore: hasMoreSavedItems,
+    loadMore: loadMoreSavedItems,
+    sentinelRef: savedSentinelRef,
+  } = useProgressiveRenderCount({
+    totalCount: visibleItems.length,
+    initialCount: 48,
+    batchSize: 48,
+    resetKey: `${kindFilter}:${topicFilter}:${String(customOnly)}:${String(regionalDiffOnly)}:${sortBy}:${deferredSearch}`,
+  });
+
+  const renderedItems = useMemo(
+    () => visibleItems.slice(0, renderedItemCount),
+    [renderedItemCount, visibleItems],
+  );
 
   const hasActiveFilters =
     search.trim() !== "" ||
@@ -732,10 +852,10 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="font-display text-xl font-semibold tracking-tight text-stone-900">
+          <h1 className="font-display text-xl font-semibold tracking-tight text-ink">
             Saved Phrases &amp; Words
           </h1>
-          <p className="mt-0.5 text-xs text-stone-500 tabular-nums">
+          <p className="mt-0.5 text-xs text-ink-muted tabular-nums">
             {counts.total} saved · {counts.phraseCount} phrases · {counts.wordCount} words
           </p>
         </div>
@@ -743,7 +863,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
         <button
           type="button"
           onClick={openModal}
-          className="flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[#0F766E] px-4 text-sm font-medium text-white transition-colors hover:bg-[#0D655E]"
+          className="flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-accent px-4 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           <span>Add Custom Phrase</span>
@@ -769,9 +889,9 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
         />
       ) : (
         <>
-          <div className="space-y-3 rounded-2xl border border-stone-200 bg-white p-4">
+          <div className="space-y-3 rounded-2xl border border-border bg-surface p-4">
             <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
+              <div className="flex items-center gap-1 rounded-xl bg-surface-muted p-1">
                 {KIND_OPTIONS.map((opt) => (
                   <KindTabButton
                     key={opt.id}
@@ -793,7 +913,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
               <div className="flex items-center gap-2 sm:shrink-0">
                 <label
                   htmlFor={sortSelectId}
-                  className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-stone-500"
+                  className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-ink-muted"
                 >
                   <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Sort</span>
@@ -802,7 +922,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
                   id={sortSelectId}
                   value={sortBy}
                   onChange={handleSortChange}
-                  className="min-h-[40px] flex-1 rounded-xl border border-stone-200 bg-white px-3 text-xs font-medium text-stone-800 focus:border-[#0F766E] focus:outline-none sm:w-48 sm:flex-initial"
+                  className="min-h-[40px] flex-1 rounded-xl border border-border bg-surface px-3 text-xs font-medium text-ink focus:border-accent focus:outline-none sm:w-48 sm:flex-initial"
                 >
                   {SORT_OPTIONS.map((opt) => (
                     <option key={opt.id} value={opt.id}>
@@ -822,7 +942,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
                   id={topicSelectId}
                   value={topicFilter}
                   onChange={handleTopicChange}
-                  className="min-h-[40px] w-full rounded-xl border border-stone-200 bg-white px-3 text-xs font-medium text-stone-700 focus:border-[#0F766E] focus:outline-none"
+                  className="min-h-[40px] w-full rounded-xl border border-border bg-surface px-3 text-xs font-medium text-ink-secondary focus:border-accent focus:outline-none"
                 >
                   <option value="all">All Categories &amp; Word Types</option>
                   {kindFilter !== "word" ? (
@@ -853,8 +973,8 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
                   aria-pressed={customOnly}
                   className={`min-h-[40px] whitespace-nowrap rounded-xl border px-3 text-xs font-medium transition-colors ${
                     customOnly
-                      ? "border-[#0F766E] bg-[#0F766E]/10 text-[#0F766E]"
-                      : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-border bg-surface text-ink-secondary hover:bg-surface-subtle hover:text-ink"
                   }`}
                 >
                   Custom only
@@ -867,8 +987,8 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
                 aria-pressed={regionalDiffOnly}
                 className={`min-h-[40px] whitespace-nowrap rounded-xl border px-3 text-xs font-medium transition-colors ${
                   regionalDiffOnly
-                    ? "border-[#0F766E] bg-[#0F766E]/10 text-[#0F766E]"
-                    : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50 hover:text-stone-900"
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-border bg-surface text-ink-secondary hover:bg-surface-subtle hover:text-ink"
                 }`}
               >
                 Varies by region
@@ -878,7 +998,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900"
+                  className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
                 >
                   <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Reset</span>
@@ -887,7 +1007,7 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-stone-500">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-ink-muted">
             <span className="tabular-nums">
               Showing {visibleItems.length} of {counts.total} saved · Tap to hear{" "}
               {DIALECT_META[settings.region].label} Vietnamese
@@ -903,49 +1023,26 @@ export const PhrasebookView: FC<PhrasebookViewProps> = ({
             />
           ) : null}
 
-          {visibleItems.length === 0 ? (
-            <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center">
-              <p className="text-sm font-medium text-stone-800">
-                No saved items match your current filters.
-              </p>
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="mt-4 inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-stone-200 px-4 text-xs font-medium text-stone-700 hover:bg-stone-50"
-              >
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Reset Filters</span>
-              </button>
-            </div>
-          ) : (
-            <div className="divide-y divide-stone-200 overflow-hidden rounded-2xl border border-stone-200 bg-white">
-              {visibleItems.map((item) => {
-                const text = getPhrasebookItemText(item, settings.region);
-                const isBusy =
-                  speakingState.activeText === text &&
-                  speakingState.activeRegion === settings.region &&
-                  (speakingState.isSpeaking || speakingState.isLoading);
-
-                return (
-                  <PhrasebookRow
-                    key={item.uid}
-                    item={item}
-                    settings={settings}
-                    isBusy={isBusy}
-                    onChangeRegion={onChangeRegion}
-                    onSpeakRegionText={speakRegionText}
-                    onUnstarItem={handleUnstarItem}
-                    onEditCustomItem={handleEditCustomItem}
-                    onDeleteCustomPhrase={handleDeleteWithUndo}
-                    onRecordPractice={onRecordPractice}
-                    onShowBig={onShowBig}
-                    onOpenPronunciationGuide={onOpenPronunciationGuide}
-                    onNotify={onNotify}
-                  />
-                );
-              })}
-            </div>
-          )}
+          <SavedItemsList
+            visibleItems={visibleItems}
+            renderedItems={renderedItems}
+            renderedItemCount={renderedItemCount}
+            hasMoreSavedItems={hasMoreSavedItems}
+            savedSentinelRef={savedSentinelRef}
+            settings={settings}
+            speakingState={speakingState}
+            onResetFilters={resetFilters}
+            onLoadMore={loadMoreSavedItems}
+            onChangeRegion={onChangeRegion}
+            onSpeakRegionText={speakRegionText}
+            onUnstarItem={handleUnstarItem}
+            onEditCustomItem={handleEditCustomItem}
+            onDeleteCustomPhrase={handleDeleteWithUndo}
+            onRecordPractice={onRecordPractice}
+            onShowBig={onShowBig}
+            onOpenPronunciationGuide={onOpenPronunciationGuide}
+            onNotify={onNotify}
+          />
         </>
       )}
 

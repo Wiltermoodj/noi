@@ -149,6 +149,7 @@ export interface TranslationResult {
 
 export type TtsSourceMode = "cloud-first" | "device-only";
 export type TtsVoiceProfile = "auto" | "female" | "male";
+export type ThemePreference = "system" | "light" | "dark";
 
 export const MIN_PLAYBACK_SPEED = 10;
 export const MAX_PLAYBACK_SPEED = 100;
@@ -156,6 +157,7 @@ export const DEFAULT_PLAYBACK_SPEED = 100;
 
 export interface AppSettings {
   region: DialectRegion;
+  theme: ThemePreference;
   autoPlayBoth: boolean;
   playbackSpeed: number;
   slowVietnamese: boolean;

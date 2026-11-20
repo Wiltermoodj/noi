@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TtsCacheStore } from "./audio/ttsCacheStore";
+import { pickBrowserVoice, pickNativeAndroidVoice } from "./audio/speechVoicePicker";
+import {
+  OFFLINE_AUDIO_MEMORY_BUDGET_BYTES,
+  OFFLINE_AUDIO_MEMORY_MAX_ENTRIES,
+  OFFLINE_AUDIO_STORAGE_BUDGET_BYTES,
+  TtsCacheStore,
+} from "./audio/ttsCacheStore";
 import { audioService, getSlowPlaybackSpeed, type SpeakingStatus } from "./audioService";
 import { stretchAudioChannelData, stretchAudioChannels } from "./audioTimeStretch";
 import { computePlaybackPacing } from "./playbackPacing";
@@ -1407,5 +1413,287 @@ describe("Vietnamese audioService", () => {
 
     expect(utterances).toHaveLength(2);
     expect(utterances[1]?.voice?.voiceURI).toBe("ms-hoaimy");
+  });
+
+  it("deduplicates redundant idle status notifications when stop() is called while already idle", () => {
+    setupBrowserAudioMocks([]);
+    audioService.stop();
+
+    const statuses: SpeakingStatus[] = [];
+    const unsub = audioService.subscribe((status) => {
+      statuses.push(status);
+    });
+
+    expect(statuses).toHaveLength(1);
+    audioService.stop();
+    audioService.stop();
+    unsub();
+
+    expect(statuses).toHaveLength(1);
+  });
+
+  it("coalesces an in-flight prefetchVietnamese request with an immediate speakVietnamese call", async () => {
+    const { playSpy } = setupBrowserAudioMocks([]);
+    vi.stubGlobal("navigator", { onLine: true });
+
+    let resolveFetch: ((res: Response) => void) | undefined;
+    const fetchMock = vi.fn(
+      async () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const uniqueText = `Coalesced prefetch phrase ${String(Date.now())}`;
+    const prefetchTask = audioService.prefetchVietnamese(uniqueText, "south", {
+      ttsSource: "cloud-first",
+      ttsVoiceProfile: "auto",
+    });
+
+    const speakTask = audioService.speakVietnamese(uniqueText, "south", {
+      ttsSource: "cloud-first",
+      ttsVoiceProfile: "auto",
+    });
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(resolveFetch).toBeDefined();
+    });
+
+    resolveFetch?.(
+      new Response(new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/wav" }), {
+        status: 200,
+        headers: { "Content-Type": "audio/wav" },
+      }),
+    );
+
+    await Promise.all([prefetchTask, speakTask]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("allocates expanded offline audio memory and storage budgets and reports telemetry stats", async () => {
+    const cacheMap = new Map<string, Response>();
+    vi.stubGlobal("navigator", {
+      onLine: true,
+      storage: {
+        persisted: vi.fn(async () => Promise.resolve(true)),
+        estimate: vi.fn(async () =>
+          Promise.resolve({
+            quota: 1024 * 1024 * 1024,
+            usage: 32 * 1024 * 1024,
+          }),
+        ),
+      },
+    });
+    vi.stubGlobal("caches", {
+      delete: vi.fn(async () => Promise.resolve(true)),
+      open: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          keys: vi.fn(async () => {
+            await Promise.resolve();
+            return Array.from(cacheMap.keys(), (url) => ({ url }) as Request);
+          }),
+          match: vi.fn(async (req: Request | string) => {
+            await Promise.resolve();
+            const url = typeof req === "string" ? req : req.url;
+            return cacheMap.get(url);
+          }),
+          put: vi.fn(async (url: string, res: Response) => {
+            await Promise.resolve();
+            cacheMap.set(url, res);
+          }),
+          delete: vi.fn(async (req: Request | string) => {
+            await Promise.resolve();
+            const url = typeof req === "string" ? req : req.url;
+            return cacheMap.delete(url);
+          }),
+        };
+      }),
+    });
+
+    const store = new TtsCacheStore({
+      maxMemoryEntries: OFFLINE_AUDIO_MEMORY_MAX_ENTRIES,
+      maxMemoryBytes: OFFLINE_AUDIO_MEMORY_BUDGET_BYTES,
+      maxStorageBytes: OFFLINE_AUDIO_STORAGE_BUDGET_BYTES,
+    });
+    for (let i = 0; i < 120; i++) {
+      store.rememberBlob(
+        `https://noi.local/tts?pack=${String(i)}`,
+        new Blob([new Uint8Array(1024)], { type: "audio/wav" }),
+      );
+    }
+    expect(store.hasInMemory("https://noi.local/tts?pack=0")).toBe(true);
+    expect(store.hasInMemory("https://noi.local/tts?pack=119")).toBe(true);
+    expect(store.getMemoryStats()).toEqual({
+      entries: 120,
+      bytes: 120 * 1024,
+      maxEntries: OFFLINE_AUDIO_MEMORY_MAX_ENTRIES,
+      maxBytes: OFFLINE_AUDIO_MEMORY_BUDGET_BYTES,
+    });
+
+    await store.write(
+      "https://noi.local/tts?persisted=1",
+      new Blob([new Uint8Array(4096)], { type: "audio/wav" }),
+      true,
+    );
+    const storageStats = await store.getStorageStats();
+    expect(storageStats.cachedClips).toBe(1);
+    expect(storageStats.cachedBytes).toBe(4096);
+    expect(storageStats.storageBudgetBytes).toBe(OFFLINE_AUDIO_STORAGE_BUDGET_BYTES);
+    expect(storageStats.persisted).toBe(true);
+
+    const budget = await audioService.getOfflineAudioBudgetStats();
+    expect(budget.memoryBlobs.maxBytes).toBe(OFFLINE_AUDIO_MEMORY_BUDGET_BYTES);
+    expect(budget.storage.storageBudgetBytes).toBe(OFFLINE_AUDIO_STORAGE_BUDGET_BYTES);
+    expect(budget.decodedBuffers.maxBytes).toBe(48 * 1024 * 1024);
+    expect(budget.stretchedBuffers.maxBytes).toBe(32 * 1024 * 1024);
+  });
+
+  it("plays cross-profile or cross-speed cached regional clip when offline instead of degrading to OS TTS", async () => {
+    const { playSpy, speakSpy } = setupBrowserAudioMocks([
+      { voiceURI: "vi-local", name: "Vietnamese Local", lang: "vi-VN", localService: true },
+    ]);
+
+    const cacheMap = new Map<string, Response>();
+    vi.stubGlobal("caches", {
+      delete: vi.fn(async () => Promise.resolve(true)),
+      open: vi.fn(async () => {
+        await Promise.resolve();
+        return {
+          keys: vi.fn(async () => {
+            await Promise.resolve();
+            return Array.from(cacheMap.keys(), (url) => ({ url }) as Request);
+          }),
+          match: vi.fn(async (url: string) => {
+            await Promise.resolve();
+            return cacheMap.get(url);
+          }),
+          put: vi.fn(async (url: string, res: Response) => {
+            await Promise.resolve();
+            cacheMap.set(url, res);
+          }),
+        };
+      }),
+    });
+
+    vi.stubGlobal("navigator", { onLine: true });
+    const fetchMock = vi.fn(async () => {
+      await Promise.resolve();
+      return new Response(new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/wav" }), {
+        status: 200,
+        headers: { "Content-Type": "audio/wav" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    // Online: cache phrase with default "auto" voiceProfile and normal speed
+    const phraseText = "Cho hỏi đường đi sân bay nha";
+    await audioService.speakVietnamese(phraseText, "south", {
+      slow: false,
+      ttsSource: "cloud-first",
+      ttsVoiceProfile: "auto",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    // Offline: user switches speaker style to "female" or slow playback; should reuse cached regional clip!
+    vi.stubGlobal("navigator", { onLine: false });
+    await audioService.speakVietnamese(phraseText, "south", {
+      slow: true,
+      playbackSpeed: 65,
+      ttsSource: "cloud-first",
+      ttsVoiceProfile: "female",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(playSpy).toHaveBeenCalledTimes(2);
+    expect(speakSpy).not.toHaveBeenCalled();
+  });
+
+  it("supports includeSlow in downloadOfflineAudioPack and prioritizes higher-quality offline voices", async () => {
+    setupBrowserAudioMocks([]);
+    vi.stubGlobal("navigator", { onLine: true });
+    const fetchMock = vi.fn(async () => {
+      await Promise.resolve();
+      return new Response(new Blob([new Uint8Array([1, 2, 3, 4])], { type: "audio/wav" }), {
+        status: 200,
+        headers: { "Content-Type": "audio/wav", "X-TTS-Cache": "memory" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const samplePhrases = [
+      {
+        id: "dual-speed-1",
+        category: "Coffee & Food" as const,
+        english: "Water please",
+        north: "Cho xin cốc nước lọc nhé",
+        central: "Cho xin ly nước lọc nghe",
+        south: "Cho xin ly nước lọc nha",
+        phoneticNorth: "chaw sin",
+        phoneticCentral: "chaw sin",
+        phoneticSouth: "chaw sin",
+        textbook: "Cho tôi nước",
+        streetNote: "Note",
+        priority: 3 as const,
+        sortOrder: 0,
+      },
+    ];
+
+    const progress = await audioService.downloadOfflineAudioPack(samplePhrases, ["south"], {
+      slow: false,
+      includeSlow: true,
+      ttsVoiceProfile: "auto",
+    });
+    expect(progress.total).toBe(2);
+    expect(progress.cachedCount).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const androidPicked = pickNativeAndroidVoice(
+      [
+        {
+          voiceURI: "vi-compact",
+          name: "Vietnamese eSpeak Compact",
+          lang: "vi-VN",
+          localService: true,
+          quality: 200,
+        },
+        {
+          voiceURI: "vi-neural-local",
+          name: "Google Vietnamese Neural",
+          lang: "vi-VN",
+          localService: true,
+          quality: 500,
+        },
+      ],
+      "vi",
+    );
+    expect(androidPicked?.voiceURI).toBe("vi-neural-local");
+
+    const browserPicked = pickBrowserVoice(
+      [
+        {
+          voiceURI: "vi-espeak",
+          name: "Vietnamese eSpeak Legacy",
+          lang: "vi-VN",
+          localService: true,
+          default: false,
+        },
+        {
+          voiceURI: "vi-enhanced",
+          name: "Vietnamese Enhanced Natural",
+          lang: "vi-VN",
+          localService: true,
+          default: false,
+        },
+      ],
+      "vi",
+      true,
+    );
+    expect(browserPicked?.voiceURI).toBe("vi-enhanced");
   });
 });

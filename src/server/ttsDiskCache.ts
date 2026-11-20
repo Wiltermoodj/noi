@@ -14,6 +14,32 @@ import {
 import path from "node:path";
 
 const ORPHAN_TMP_MAX_AGE_MS = 300_000;
+const FS_STAT_CONCURRENCY = 32;
+const TOUCH_THROTTLE_MS = 60_000;
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  const runWorker = async (): Promise<void> => {
+    while (nextIndex < items.length) {
+      const idx = nextIndex++;
+      const item = items[idx];
+      if (item !== undefined) {
+        results[idx] = await mapper(item);
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, async () => runWorker()));
+  return results;
+}
 
 export type CachedAudioContentType = "audio/wav" | "audio/mpeg";
 
@@ -78,6 +104,7 @@ export class TtsDiskCache {
   private activePrunePromise: Promise<void> | null = null;
   private pruneDirty = false;
   private tempWriteCounter = 0;
+  private readonly lastTouchByPath = new Map<string, number>();
 
   constructor(options: TtsDiskCacheOptions) {
     this.cacheDir = options.cacheDir;
@@ -117,21 +144,19 @@ export class TtsDiskCache {
   }
 
   private async readAudioCacheMetadata(fileNames: string[]): Promise<DiskCacheItemMeta[]> {
-    const entries = await Promise.all(
-      fileNames.map(async (name) => {
-        const fullPath = path.join(this.cacheDir, name);
-        try {
-          const info = await stat(fullPath);
-          if (info.size < minValidSizeForFile(name)) {
-            void unlink(fullPath).catch(() => undefined);
-            return null;
-          }
-          return { fullPath, size: info.size, mtimeMs: info.mtimeMs };
-        } catch {
+    const entries = await mapWithConcurrency(fileNames, FS_STAT_CONCURRENCY, async (name) => {
+      const fullPath = path.join(this.cacheDir, name);
+      try {
+        const info = await stat(fullPath);
+        if (info.size < minValidSizeForFile(name)) {
+          void unlink(fullPath).catch(() => undefined);
           return null;
         }
-      }),
-    );
+        return { fullPath, size: info.size, mtimeMs: info.mtimeMs };
+      } catch {
+        return null;
+      }
+    });
     return entries.filter((item): item is DiskCacheItemMeta => item !== null);
   }
 
@@ -151,6 +176,7 @@ export class TtsDiskCache {
       }
       try {
         await unlink(item.fullPath);
+        this.lastTouchByPath.delete(item.fullPath);
         remainingCount--;
         totalBytes -= item.size;
       } catch {
@@ -162,19 +188,17 @@ export class TtsDiskCache {
 
   private async cleanupOrphanTmpFiles(tmpFiles: string[]): Promise<void> {
     const cutoffMs = this.now() - ORPHAN_TMP_MAX_AGE_MS;
-    await Promise.all(
-      tmpFiles.map(async (name) => {
-        const fullPath = path.join(this.cacheDir, name);
-        try {
-          const info = await stat(fullPath);
-          if (info.mtimeMs <= cutoffMs) {
-            await unlink(fullPath);
-          }
-        } catch {
-          // Ignore already-renamed or removed temp files
+    await mapWithConcurrency(tmpFiles, FS_STAT_CONCURRENCY, async (name) => {
+      const fullPath = path.join(this.cacheDir, name);
+      try {
+        const info = await stat(fullPath);
+        if (info.mtimeMs <= cutoffMs) {
+          await unlink(fullPath);
         }
-      }),
-    );
+      } catch {
+        // Ignore already-renamed or removed temp files
+      }
+    });
   }
 
   private async runPruneLoop(): Promise<void> {
@@ -232,8 +256,19 @@ export class TtsDiskCache {
         }
         return null;
       }
-      const touchTime = new Date(this.now());
-      void utimes(filePath, touchTime, touchTime).catch(() => undefined);
+      const nowMs = this.now();
+      const lastTouchMs = this.lastTouchByPath.get(filePath);
+      if (lastTouchMs === undefined || nowMs - lastTouchMs >= TOUCH_THROTTLE_MS) {
+        if (this.lastTouchByPath.size >= Math.max(64, this.maxEntries * 2)) {
+          const oldest = this.lastTouchByPath.keys().next().value;
+          if (oldest !== undefined) {
+            this.lastTouchByPath.delete(oldest);
+          }
+        }
+        this.lastTouchByPath.set(filePath, nowMs);
+        const touchTime = new Date(nowMs);
+        void utimes(filePath, touchTime, touchTime).catch(() => undefined);
+      }
       return data;
     } catch {
       return null;

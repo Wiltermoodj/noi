@@ -117,30 +117,30 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const isChunkIssue = isChunkLoadErrorMessage(this.state.errorMessage);
     const wrapperClass =
       this.props.variant === "inline"
-        ? "flex items-center justify-center py-8 text-[#111827]"
-        : "flex min-h-screen items-center justify-center bg-[#FAFAFA] px-4 py-12 text-[#111827]";
+        ? "flex items-center justify-center py-8 text-ink"
+        : "flex min-h-screen items-center justify-center bg-canvas px-4 py-12 text-ink";
 
     return (
       <div className={wrapperClass}>
-        <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-6 shadow-xs">
-          <h1 className="font-display text-xl font-bold text-stone-900">Something went wrong</h1>
-          <p className="mt-2 text-sm text-stone-600">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-xs">
+          <h1 className="font-display text-xl font-bold text-ink">Something went wrong</h1>
+          <p className="mt-2 text-sm text-ink-secondary">
             Nói encountered an unexpected error while displaying this screen. Your offline phrase
             data is preserved unless you choose to reset it.
           </p>
           {isChunkIssue ? (
-            <p className="mt-2 text-xs text-stone-500">
+            <p className="mt-2 text-xs text-ink-muted">
               If this happened after an update or offline switch, reloading the page usually fixes
               it.
             </p>
           ) : null}
           {this.state.errorMessage ? (
-            <p className="mt-3 rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-600">
+            <p className="mt-3 rounded-xl bg-surface-subtle px-3 py-2 text-xs text-ink-secondary">
               {this.state.errorMessage}
             </p>
           ) : null}
           {this.state.restoreError ? (
-            <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            <p className="mt-2 rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-xs text-danger-ink">
               {this.state.restoreError}
             </p>
           ) : null}
@@ -158,35 +158,35 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             <button
               type="button"
               onClick={this.handleRetry}
-              className="min-h-[44px] flex-1 rounded-xl bg-[#0F766E] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#0D655E]"
+              className="min-h-[44px] flex-1 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg transition-colors hover:bg-accent-hover"
             >
               Try again
             </button>
             <button
               type="button"
               onClick={this.handleReload}
-              className="min-h-[44px] rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+              className="min-h-[44px] rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-subtle"
             >
               Reload page
             </button>
             <button
               type="button"
               onClick={this.handleDownloadBackup}
-              className="min-h-[44px] rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+              className="min-h-[44px] rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-subtle"
             >
               {this.state.backupSaved ? "Backup saved" : "Download backup"}
             </button>
             <button
               type="button"
               onClick={this.handleTriggerRestore}
-              className="min-h-[44px] rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+              className="min-h-[44px] rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-subtle"
             >
               Restore backup
             </button>
             <button
               type="button"
               onClick={this.handleResetAndReload}
-              className="min-h-[44px] rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+              className="min-h-[44px] rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-subtle"
             >
               Reset saved data
             </button>

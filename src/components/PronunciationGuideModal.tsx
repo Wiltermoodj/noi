@@ -67,7 +67,7 @@ const RegionTabButton: FC<RegionTabButtonProps> = ({ region, active, onSelect })
       type="button"
       onClick={handleClick}
       className={`flex min-h-[38px] flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition-colors ${
-        active ? "bg-white text-stone-900 shadow-xs" : "text-stone-600 hover:text-stone-900"
+        active ? "bg-surface text-ink shadow-xs" : "text-ink-secondary hover:text-ink"
       }`}
     >
       <RegionIcon region={region} className="h-4 w-4" />
@@ -93,9 +93,7 @@ const GuideTabButton: FC<GuideTabButtonProps> = ({ id, label, active, onSelect }
       type="button"
       onClick={handleClick}
       className={`min-h-[38px] flex-1 whitespace-nowrap border-b-2 px-3 text-xs font-semibold transition-colors ${
-        active
-          ? "border-[#0F766E] text-[#0F766E]"
-          : "border-transparent text-stone-500 hover:text-stone-900"
+        active ? "border-accent text-accent" : "border-transparent text-ink-muted hover:text-ink"
       }`}
     >
       {label}
@@ -127,17 +125,17 @@ const ToneCard: FC<ToneCardProps> = ({
   }, [item.exampleWord, onPlayPitch]);
 
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-stone-200 bg-white p-3.5">
+    <div className="flex flex-col justify-between rounded-xl border border-border bg-surface p-3.5">
       <div>
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[#0F766E]/10 font-display text-sm font-bold text-[#0F766E]">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-accent-soft font-display text-sm font-bold text-accent">
                 {item.mark}
               </span>
               <div>
-                <p className="font-display text-sm font-semibold text-stone-900">{item.name}</p>
-                <p className="text-[11px] font-medium text-[#0F766E]">{item.summary}</p>
+                <p className="font-display text-sm font-semibold text-ink">{item.name}</p>
+                <p className="text-[11px] font-medium text-accent">{item.summary}</p>
               </div>
             </div>
           </div>
@@ -146,7 +144,7 @@ const ToneCard: FC<ToneCardProps> = ({
             width="48"
             height="26"
             viewBox="0 0 44 24"
-            className="shrink-0 overflow-visible text-[#0F766E]"
+            className="shrink-0 overflow-visible text-accent"
             aria-hidden="true"
           >
             <line
@@ -169,13 +167,13 @@ const ToneCard: FC<ToneCardProps> = ({
           </svg>
         </div>
 
-        <p className="mt-2.5 text-xs leading-relaxed text-stone-600">{item.tip}</p>
+        <p className="mt-2.5 text-xs leading-relaxed text-ink-secondary">{item.tip}</p>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-stone-100 pt-2.5">
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border-subtle pt-2.5">
         <div className="min-w-0 text-xs">
-          <span className="font-semibold text-stone-900">{item.exampleWord}</span>
-          <span className="text-stone-500"> · {item.exampleMeaning}</span>
+          <span className="font-semibold text-ink">{item.exampleWord}</span>
+          <span className="text-ink-muted"> · {item.exampleMeaning}</span>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
@@ -185,9 +183,9 @@ const ToneCard: FC<ToneCardProps> = ({
               onClick={handlePitch}
               aria-label={`Play pitch melody for ${item.name} tone`}
               title="Hear pitch contour"
-              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2 text-[11px] font-medium text-stone-700 transition-colors hover:bg-stone-100"
+              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-border bg-surface-subtle px-2 text-[11px] font-medium text-ink-secondary transition-colors hover:bg-surface-muted"
             >
-              <Play className="h-3 w-3 text-[#0F766E]" aria-hidden="true" />
+              <Play className="h-3 w-3 text-accent" aria-hidden="true" />
               <span>Pitch</span>
             </button>
           ) : null}
@@ -198,8 +196,8 @@ const ToneCard: FC<ToneCardProps> = ({
             aria-label={`Hear example word ${item.exampleWord}`}
             className={`inline-flex min-h-[34px] items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors ${
               isBusy
-                ? "bg-[#0F766E] text-white"
-                : "bg-[#0F766E]/10 text-[#0F766E] hover:bg-[#0F766E]/20"
+                ? "bg-accent text-accent-fg"
+                : "bg-accent-soft text-accent hover:bg-accent-muted"
             }`}
           >
             {isBusy ? (
@@ -230,19 +228,19 @@ const SoundRow: FC<SoundRowProps> = ({ item, isBusy, onSpeakWord }) => {
     <div className="flex items-start justify-between gap-3 py-3 first:pt-1 last:pb-1">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="inline-flex min-w-[44px] items-center justify-center rounded-lg bg-stone-100 px-2 py-0.5 font-display text-sm font-bold text-stone-900">
+          <span className="inline-flex min-w-[44px] items-center justify-center rounded-lg bg-surface-muted px-2 py-0.5 font-display text-sm font-bold text-ink">
             {item.symbol}
           </span>
-          <span className="text-xs font-semibold text-[#0F766E]">{item.soundAs}</span>
+          <span className="text-xs font-semibold text-accent">{item.soundAs}</span>
           {item.regionalHighlight ? (
-            <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+            <span className="rounded-md bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning-ink">
               Varies by region
             </span>
           ) : null}
         </div>
-        <p className="mt-1.5 text-xs leading-relaxed text-stone-600">{item.tip}</p>
-        <p className="mt-1 text-xs text-stone-500">
-          Example: <span className="font-semibold text-stone-800">{item.exampleWord}</span> (
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-secondary">{item.tip}</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          Example: <span className="font-semibold text-ink">{item.exampleWord}</span> (
           {item.exampleMeaning})
         </p>
       </div>
@@ -252,9 +250,7 @@ const SoundRow: FC<SoundRowProps> = ({ item, isBusy, onSpeakWord }) => {
         onClick={handleSpeak}
         aria-label={`Hear example word ${item.exampleWord}`}
         className={`flex min-h-[42px] min-w-[42px] shrink-0 items-center justify-center rounded-xl transition-colors ${
-          isBusy
-            ? "bg-[#0F766E] text-white"
-            : "bg-[#0F766E]/10 text-[#0F766E] hover:bg-[#0F766E]/20"
+          isBusy ? "bg-accent text-accent-fg" : "bg-accent-soft text-accent hover:bg-accent-muted"
         }`}
       >
         {isBusy ? (
@@ -327,7 +323,7 @@ export const PronunciationGuideModal: FC<PronunciationGuideModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/50 p-0 backdrop-blur-xs sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-backdrop p-0 backdrop-blur-xs sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -340,14 +336,14 @@ export const PronunciationGuideModal: FC<PronunciationGuideModalProps> = ({
         className="fixed inset-0"
       />
 
-      <div className="pb-safe-modal relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-[#FAFAFA] shadow-2xl sm:rounded-3xl">
-        <div className="border-b border-stone-200 bg-white px-5 pt-5 pb-3 sm:px-6">
+      <div className="pb-safe-modal relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-canvas shadow-2xl sm:rounded-3xl">
+        <div className="border-b border-border bg-surface px-5 pt-5 pb-3 sm:px-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 id={titleId} className="font-display text-lg font-semibold text-stone-900">
+              <h2 id={titleId} className="font-display text-lg font-semibold text-ink">
                 Vietnamese Pronunciation Guide
               </h2>
-              <p className="mt-0.5 text-xs text-stone-500">
+              <p className="mt-0.5 text-xs text-ink-muted">
                 {regionMeta.fullRegionLabel} · {regionMeta.accentHint}
               </p>
             </div>
@@ -355,13 +351,13 @@ export const PronunciationGuideModal: FC<PronunciationGuideModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Close pronunciation guide"
-              className="-mr-2 -mt-1 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+              className="-mr-2 -mt-1 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
 
-          <div className="mt-3 flex items-center gap-1 rounded-xl bg-stone-100 p-1">
+          <div className="mt-3 flex items-center gap-1 rounded-xl bg-surface-muted p-1">
             {DIALECT_REGIONS.map((r) => (
               <RegionTabButton
                 key={r}
@@ -388,7 +384,7 @@ export const PronunciationGuideModal: FC<PronunciationGuideModalProps> = ({
         <div className="flex-1 overflow-y-auto px-5 py-4 sm:px-6">
           {activeTab === "tones" ? (
             <div className="space-y-3">
-              <p className="text-xs leading-relaxed text-stone-600">
+              <p className="text-xs leading-relaxed text-ink-secondary">
                 {settings.region === "north"
                   ? "Northern Vietnamese keeps all 6 tones sharply distinct — especially the dipping hỏi (ả) vs. creaky-rising ngã (ã)."
                   : `${regionMeta.regionName} speech uses 5 distinct spoken tones in everyday conversation because hỏi (ả) and ngã (ã) merge into one smooth dip-and-rise.`}
@@ -415,7 +411,7 @@ export const PronunciationGuideModal: FC<PronunciationGuideModalProps> = ({
           ) : null}
 
           {activeTab === "consonants" ? (
-            <div className="divide-y divide-stone-100 rounded-2xl border border-stone-200 bg-white px-4 py-2">
+            <div className="divide-y divide-border-subtle rounded-2xl border border-border bg-surface px-4 py-2">
               {consonantItems.map((item) => {
                 const isBusy =
                   speakingState.activeText === item.exampleWord &&
@@ -434,7 +430,7 @@ export const PronunciationGuideModal: FC<PronunciationGuideModalProps> = ({
           ) : null}
 
           {activeTab === "vowels" ? (
-            <div className="divide-y divide-stone-100 rounded-2xl border border-stone-200 bg-white px-4 py-2">
+            <div className="divide-y divide-border-subtle rounded-2xl border border-border bg-surface px-4 py-2">
               {vowelItems.map((item) => {
                 const isBusy =
                   speakingState.activeText === item.exampleWord &&

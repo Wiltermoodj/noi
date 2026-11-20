@@ -104,7 +104,13 @@ function expandSpokenTokens(transcript: string, region: DialectRegion): string[]
   return expanded;
 }
 
+const MAX_SYLLABLE_FEATURES_CACHE_SIZE = 1024;
+const syllableFeaturesCache = new Map<string, SyllableFeatures>();
+
 function extractSyllableFeatures(word: string): SyllableFeatures {
+  const cached = syllableFeaturesCache.get(word);
+  if (cached) return cached;
+
   const lowered = word.toLocaleLowerCase("vi").normalize("NFC");
   const canonical = SLANG_EQUIVALENTS[lowered] ?? lowered;
   const nfd = canonical.normalize("NFD");
@@ -120,12 +126,20 @@ function extractSyllableFeatures(word: string): SyllableFeatures {
     }
   }
 
-  return {
+  const features: SyllableFeatures = {
     exact: canonical,
     baseWithVowels: stripped.normalize("NFC"),
     ascii: normalizeText(canonical),
     tone,
   };
+  if (syllableFeaturesCache.size >= MAX_SYLLABLE_FEATURES_CACHE_SIZE) {
+    const oldestKey = syllableFeaturesCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      syllableFeaturesCache.delete(oldestKey);
+    }
+  }
+  syllableFeaturesCache.set(word, features);
+  return features;
 }
 
 function normalizeRegionalBase(base: string, region: DialectRegion): string {

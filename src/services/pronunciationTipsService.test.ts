@@ -69,4 +69,13 @@ describe("pronunciationTipsService", () => {
     const vowels = getVowelReferenceItems();
     expect(vowels.length).toBeGreaterThanOrEqual(6);
   });
+
+  it("memoizes repeated calls for the same phrase, region, and maxTips", () => {
+    const first = getPhrasePronunciationTips("Cho em một ly cà phê sữa đá nha.", "south", 3);
+    const second = getPhrasePronunciationTips("  Cho em một ly cà phê sữa đá nha.  ", "south", 3);
+    const north = getPhrasePronunciationTips("Cho em một ly cà phê sữa đá nha.", "north", 3);
+
+    expect(second).toBe(first);
+    expect(north).not.toBe(first);
+  });
 });

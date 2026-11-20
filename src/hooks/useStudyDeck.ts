@@ -114,12 +114,20 @@ export function useStudyDeck(options?: UseStudyDeckOptions) {
     if (syncedFromExternalRef.current.settings === settings) {
       syncedFromExternalRef.current.settings = null;
       dirtyFlagsRef.current.settings = false;
-      return;
+      return undefined;
     }
     syncedFromExternalRef.current.settings = null;
-    const saved = saveSettings(settings);
-    dirtyFlagsRef.current.settings = !saved;
-    notifyWriteResult(saved);
+    dirtyFlagsRef.current.settings = true;
+
+    const timerId = window.setTimeout(() => {
+      const saved = saveSettings(latestSettingsRef.current);
+      dirtyFlagsRef.current.settings = !saved;
+      notifyWriteResult(saved);
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
   }, [notifyWriteResult, settings]);
 
   useEffect(() => {
@@ -127,12 +135,20 @@ export function useStudyDeck(options?: UseStudyDeckOptions) {
     if (syncedFromExternalRef.current.phrases === phrases) {
       syncedFromExternalRef.current.phrases = null;
       dirtyFlagsRef.current.phrases = false;
-      return;
+      return undefined;
     }
     syncedFromExternalRef.current.phrases = null;
-    const saved = savePhrases(phrases);
-    dirtyFlagsRef.current.phrases = !saved;
-    notifyWriteResult(saved);
+    dirtyFlagsRef.current.phrases = true;
+
+    const timerId = window.setTimeout(() => {
+      const saved = savePhrases(latestPhrasesRef.current);
+      dirtyFlagsRef.current.phrases = !saved;
+      notifyWriteResult(saved);
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
   }, [notifyWriteResult, phrases]);
 
   useEffect(() => {
@@ -140,12 +156,20 @@ export function useStudyDeck(options?: UseStudyDeckOptions) {
     if (syncedFromExternalRef.current.starredWords === starredWords) {
       syncedFromExternalRef.current.starredWords = null;
       dirtyFlagsRef.current.starredWords = false;
-      return;
+      return undefined;
     }
     syncedFromExternalRef.current.starredWords = null;
-    const saved = saveStarredWords(starredWords);
-    dirtyFlagsRef.current.starredWords = !saved;
-    notifyWriteResult(saved);
+    dirtyFlagsRef.current.starredWords = true;
+
+    const timerId = window.setTimeout(() => {
+      const saved = saveStarredWords(latestStarredWordsRef.current);
+      dirtyFlagsRef.current.starredWords = !saved;
+      notifyWriteResult(saved);
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
   }, [notifyWriteResult, starredWords]);
 
   useEffect(() => {

@@ -80,9 +80,9 @@ const WIDTH_STEPS: Record<number, string> = {
 };
 
 function getAccuracyBarClass(accuracy: number): string {
-  if (accuracy >= 80) return "bg-[#0F766E]";
-  if (accuracy >= 55) return "bg-amber-500";
-  return "bg-rose-500";
+  if (accuracy >= 80) return "bg-accent";
+  if (accuracy >= 55) return "bg-warning";
+  return "bg-danger";
 }
 
 function getBucketWidthClass(percent: number): string {
@@ -91,23 +91,23 @@ function getBucketWidthClass(percent: number): string {
 }
 
 function getAccuracyTextClass(accuracy: number): string {
-  if (accuracy >= 80) return "text-[#0F766E]";
-  if (accuracy >= 55) return "text-amber-700";
-  return "text-rose-700";
+  if (accuracy >= 80) return "text-accent";
+  if (accuracy >= 55) return "text-warning-ink";
+  return "text-danger-ink";
 }
 
 function getWordChipClass(status: WordPronunciationFeedback["status"]): string {
   switch (status) {
     case "exact":
-      return "border-emerald-200 bg-emerald-50 text-emerald-900";
+      return "border-success-border bg-success-soft text-success-ink";
     case "dialect":
-      return "border-[#0F766E]/30 bg-[#0F766E]/10 text-[#0F766E]";
+      return "border-accent-border bg-accent-soft text-accent";
     case "tone":
-      return "border-amber-200 bg-amber-50 text-amber-900";
+      return "border-warning-border bg-warning-soft text-warning-ink";
     case "close":
-      return "border-stone-300 bg-stone-100 text-stone-800";
+      return "border-border-strong bg-surface-muted text-ink";
     case "missed":
-      return "border-rose-200 bg-rose-50/80 text-rose-800";
+      return "border-danger-border bg-danger-soft text-danger-ink";
   }
 }
 
@@ -146,8 +146,8 @@ const RegionSelectorButton: FC<RegionSelectorButtonProps> = ({
       onClick={handleClick}
       className={`min-h-[34px] rounded-lg px-2.5 text-xs font-medium transition-colors ${
         active
-          ? "bg-white text-stone-900 shadow-xs"
-          : "text-stone-600 hover:bg-white/60 hover:text-stone-900"
+          ? "bg-surface text-ink shadow-xs"
+          : "text-ink-secondary hover:bg-surface/60 hover:text-ink"
       }`}
     >
       {label}
@@ -156,9 +156,9 @@ const RegionSelectorButton: FC<RegionSelectorButtonProps> = ({
 };
 
 function getMeasuredContourStroke(status?: WordMatchStatus): string {
-  if (status === "exact" || status === "dialect") return "#0F766E";
-  if (status === "tone" || status === "close") return "#D97706";
-  return "#DC2626";
+  if (status === "exact" || status === "dialect") return "var(--theme-accent)";
+  if (status === "tone" || status === "close") return "var(--theme-warning)";
+  return "var(--theme-danger)";
 }
 
 interface ToneSyllableChipProps {
@@ -190,8 +190,8 @@ const ToneSyllableChip: FC<ToneSyllableChipProps> = ({
       title={`${info.syllable}: ${info.toneLabel} (tap to hear tone)`}
       className={`inline-flex min-w-[54px] flex-col items-center gap-0.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
         isHighlighted
-          ? "border-[#0F766E] bg-[#0F766E]/10 text-[#0F766E]"
-          : "border-stone-200 bg-stone-50 text-stone-700 hover:border-[#0F766E]/50 hover:bg-white"
+          ? "border-accent bg-accent-soft text-accent"
+          : "border-border bg-surface-subtle text-ink-secondary hover:border-accent-border hover:bg-surface"
       }`}
     >
       <span className="font-semibold">{info.syllable}</span>
@@ -223,7 +223,7 @@ const ToneSyllableChip: FC<ToneSyllableChipProps> = ({
           />
         ) : null}
       </svg>
-      <span className="text-[10px] text-stone-400">{shortToneHint}</span>
+      <span className="text-[10px] text-ink-faint">{shortToneHint}</span>
     </button>
   );
 };
@@ -241,12 +241,12 @@ const WordFeedbackChip: FC<{ word: WordPronunciationFeedback }> = ({ word }) => 
         <span className="text-[10px] font-normal">({word.dialectNote})</span>
       ) : null}
       {word.status === "tone" ? (
-        <span className="text-[10px] font-normal text-amber-700">
+        <span className="text-[10px] font-normal text-warning-ink">
           {word.spoken ? `(${word.spoken})` : "(tone)"}
         </span>
       ) : null}
       {word.status === "close" && word.spoken ? (
-        <span className="text-[10px] font-normal text-stone-500">({word.spoken})</span>
+        <span className="text-[10px] font-normal text-ink-muted">({word.spoken})</span>
       ) : null}
     </span>
   );
@@ -272,9 +272,9 @@ const EvaluationFeedbackCard: FC<EvaluationFeedbackCardProps> = ({
   const hasNonExactWords = evaluation.words.some((w) => w.status !== "exact");
 
   return (
-    <div className="mt-4 space-y-3 rounded-xl border border-stone-200 bg-white p-3.5">
+    <div className="mt-4 space-y-3 rounded-xl border border-border bg-surface p-3.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-stone-700">{evaluation.feedbackMessage}</span>
+        <span className="text-xs font-medium text-ink-secondary">{evaluation.feedbackMessage}</span>
         <span
           className={`shrink-0 text-sm font-bold tabular-nums ${getAccuracyTextClass(evaluation.accuracy)}`}
         >
@@ -288,7 +288,7 @@ const EvaluationFeedbackCard: FC<EvaluationFeedbackCardProps> = ({
         aria-valuenow={evaluation.accuracy}
         aria-valuemin={0}
         aria-valuemax={100}
-        className="h-2 w-full overflow-hidden rounded-full bg-stone-100"
+        className="h-2 w-full overflow-hidden rounded-full bg-surface-muted"
       >
         <div
           className={`h-full rounded-full transition-all duration-300 ${getAccuracyBarClass(evaluation.accuracy)} ${getBucketWidthClass(evaluation.accuracy)}`}
@@ -303,7 +303,7 @@ const EvaluationFeedbackCard: FC<EvaluationFeedbackCardProps> = ({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stone-100 pt-2.5 text-xs text-stone-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border-subtle pt-2.5 text-xs text-ink-muted">
         <span>{evaluation.bestTranscript ? evaluation.bestTranscript : "No words recognized"}</span>
 
         <div className="flex items-center gap-1.5">
@@ -313,8 +313,8 @@ const EvaluationFeedbackCard: FC<EvaluationFeedbackCardProps> = ({
               onClick={onPlayMine}
               className={`inline-flex min-h-[32px] items-center gap-1 rounded-lg border px-2.5 font-medium transition-colors ${
                 isPlayingMine
-                  ? "border-[#0F766E] bg-[#0F766E] text-white"
-                  : "border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100"
+                  ? "border-accent bg-accent text-accent-fg"
+                  : "border-border bg-surface-subtle text-ink-secondary hover:bg-surface-muted"
               }`}
             >
               <Play className="h-3 w-3 fill-current" aria-hidden="true" />
@@ -326,7 +326,7 @@ const EvaluationFeedbackCard: FC<EvaluationFeedbackCardProps> = ({
             <button
               type="button"
               onClick={onPlaySlow}
-              className="inline-flex min-h-[32px] items-center gap-1 rounded-lg px-2 font-medium text-[#0F766E] hover:bg-[#0F766E]/10"
+              className="inline-flex min-h-[32px] items-center gap-1 rounded-lg px-2 font-medium text-accent hover:bg-accent-soft"
             >
               <Volume2 className="h-3.5 w-3.5" aria-hidden="true" />
               <span>Hear {slowerSpeed}%</span>
@@ -336,7 +336,7 @@ const EvaluationFeedbackCard: FC<EvaluationFeedbackCardProps> = ({
       </div>
 
       {hasNonExactWords ? (
-        <p className="text-[11px] text-stone-400">
+        <p className="text-[11px] text-ink-faint">
           Green/Teal: exact or regional match · Amber: tone check · Gray: close · Red: missed
         </p>
       ) : null}
@@ -365,15 +365,15 @@ const PracticeHeader: FC<PracticeHeaderProps> = ({
 }) => (
   <div className="flex flex-wrap items-center justify-between gap-3">
     <div>
-      <p className="text-xs font-semibold text-stone-900">
+      <p className="text-xs font-semibold text-ink">
         Pronunciation Practice · {DIALECT_META[region].fullRegionLabel}
         {bestAccuracy !== undefined ? (
-          <span className="ml-1.5 font-medium text-[#0F766E] tabular-nums">
+          <span className="ml-1.5 font-medium text-accent tabular-nums">
             · Best {bestAccuracy}%
           </span>
         ) : null}
       </p>
-      <p className="mt-0.5 text-xs text-stone-500">
+      <p className="mt-0.5 text-xs text-ink-muted">
         {activeEngine === "offline-tone"
           ? "Offline Tone Coach · Records locally & analyzes Vietnamese pitch contours."
           : "Speech Recognition · Evaluates words, tones, and regional sound shifts."}
@@ -386,8 +386,8 @@ const PracticeHeader: FC<PracticeHeaderProps> = ({
         onClick={onToggleMic}
         className={`inline-flex min-h-[44px] items-center gap-2 rounded-xl px-4 text-xs font-semibold transition-colors ${
           isListening
-            ? "bg-rose-600 text-white hover:bg-rose-700"
-            : "bg-[#0F766E] text-white hover:bg-[#0D655E]"
+            ? "bg-danger text-accent-fg hover:bg-danger-hover"
+            : "bg-accent text-accent-fg hover:bg-accent-hover"
         }`}
       >
         {isListening ? (
@@ -422,14 +422,14 @@ const PracticeEngineSwitcher: FC<PracticeEngineSwitcherProps> = ({
   onToggleAutoStop,
 }) => (
   <div className="mt-3 flex flex-wrap items-center gap-2">
-    <div className="flex flex-1 items-center gap-1 rounded-lg bg-stone-200/70 p-1">
+    <div className="flex flex-1 items-center gap-1 rounded-lg bg-surface-muted p-1">
       <button
         type="button"
         onClick={onSelectOffline}
         className={`min-h-[32px] flex-1 whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors ${
           activeEngine === "offline-tone"
-            ? "bg-white text-[#0F766E] shadow-xs"
-            : "text-stone-600 hover:text-stone-900"
+            ? "bg-surface text-accent shadow-xs"
+            : "text-ink-secondary hover:text-ink"
         }`}
       >
         Offline Tone Coach
@@ -439,8 +439,8 @@ const PracticeEngineSwitcher: FC<PracticeEngineSwitcherProps> = ({
         onClick={onSelectWebSpeech}
         className={`min-h-[32px] flex-1 whitespace-nowrap rounded-md px-2.5 text-xs font-medium transition-colors ${
           activeEngine === "web-speech"
-            ? "bg-white text-[#0F766E] shadow-xs"
-            : "text-stone-600 hover:text-stone-900"
+            ? "bg-surface text-accent shadow-xs"
+            : "text-ink-secondary hover:text-ink"
         }`}
       >
         Online Speech
@@ -454,8 +454,8 @@ const PracticeEngineSwitcher: FC<PracticeEngineSwitcherProps> = ({
         aria-pressed={autoStopOnSilence}
         className={`min-h-[36px] whitespace-nowrap rounded-lg border px-2.5 text-xs font-medium transition-colors ${
           autoStopOnSilence
-            ? "border-[#0F766E]/40 bg-[#0F766E]/10 text-[#0F766E]"
-            : "border-stone-200 bg-white text-stone-600 hover:text-stone-900"
+            ? "border-accent-border bg-accent-soft text-accent"
+            : "border-border bg-surface text-ink-secondary hover:text-ink"
         }`}
       >
         {autoStopOnSilence ? "Auto-stop: On" : "Auto-stop: Off"}
@@ -498,22 +498,22 @@ const PronunciationFocusCard: FC<PronunciationFocusCardProps> = ({
   );
 
   return (
-    <div className="mt-3 rounded-xl border border-stone-200/80 bg-white px-3.5 py-2.5">
+    <div className="mt-3 rounded-xl border border-border bg-surface px-3.5 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold text-[#0F766E]">{regionTitle} Pronunciation Tips</p>
+        <p className="text-[11px] font-semibold text-accent">{regionTitle} Pronunciation Tips</p>
         <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={onPlayNormal}
-            className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2 text-[11px] font-medium text-stone-700 transition-colors hover:bg-stone-100 hover:text-stone-900"
+            className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-border bg-surface-subtle px-2 text-[11px] font-medium text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
           >
-            <Volume2 className="h-3 w-3 text-[#0F766E]" aria-hidden="true" />
+            <Volume2 className="h-3 w-3 text-accent" aria-hidden="true" />
             <span>Hear {DIALECT_META[region].label}</span>
           </button>
           <button
             type="button"
             onClick={onPlaySlow}
-            className="inline-flex min-h-[30px] items-center rounded-lg border border-stone-200 bg-stone-50 px-2 text-[11px] font-medium tabular-nums text-stone-700 transition-colors hover:bg-stone-100 hover:text-stone-900"
+            className="inline-flex min-h-[30px] items-center rounded-lg border border-border bg-surface-subtle px-2 text-[11px] font-medium tabular-nums text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
           >
             {slowerSpeed}%
           </button>
@@ -521,21 +521,21 @@ const PronunciationFocusCard: FC<PronunciationFocusCardProps> = ({
             <button
               type="button"
               onClick={onPlayToneGuide}
-              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-stone-200 bg-stone-50 px-2 text-[11px] font-medium text-stone-700 transition-colors hover:bg-stone-100 hover:text-stone-900"
+              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-border bg-surface-subtle px-2 text-[11px] font-medium text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
             >
-              <Play className="h-3 w-3 text-[#0F766E]" aria-hidden="true" />
+              <Play className="h-3 w-3 text-accent" aria-hidden="true" />
               <span>Tone Melody</span>
             </button>
           ) : null}
         </div>
       </div>
-      <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-stone-600">
+      <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-ink-secondary">
         {tips.map((tip) => (
           <li key={tip.id} className="flex flex-col gap-0.5">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="font-semibold text-stone-800">{tip.title}</span>
+              <span className="font-semibold text-ink">{tip.title}</span>
               {tip.words.length > 0 ? (
-                <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-[#0F766E]">
+                <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[11px] font-medium text-accent">
                   {tip.words.join(" · ")}
                 </span>
               ) : null}
@@ -546,8 +546,8 @@ const PronunciationFocusCard: FC<PronunciationFocusCardProps> = ({
       </ul>
 
       {toneSyllables.length > 0 ? (
-        <div className="mt-2.5 border-t border-stone-100 pt-2.5">
-          <p className="mb-1.5 text-[11px] font-medium text-stone-500">
+        <div className="mt-2.5 border-t border-border-subtle pt-2.5">
+          <p className="mb-1.5 text-[11px] font-medium text-ink-muted">
             {hasAnyMeasuredContour
               ? "Dashed: target tone · Solid: your voice pitch (tap any syllable to hear target):"
               : `Tap any syllable to hear its ${DIALECT_META[region].label} pitch contour (dashed = target):`}
@@ -598,22 +598,22 @@ const LiveListeningBanner: FC<LiveListeningBannerProps> = ({
         : "Listening for Vietnamese…";
 
   return (
-    <div className="mt-3 space-y-2 rounded-lg border border-[#0F766E]/20 bg-white px-3 py-2.5 text-xs text-stone-700">
+    <div className="mt-3 space-y-2 rounded-lg border border-accent-border bg-surface px-3 py-2.5 text-xs text-ink-secondary">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[#0F766E]" aria-hidden="true" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
           <span>{statusText}</span>
         </div>
         {livePitchHz !== null ? (
-          <span className="shrink-0 font-mono text-[11px] text-[#0F766E] tabular-nums">
+          <span className="shrink-0 font-mono text-[11px] text-accent tabular-nums">
             {Math.round(livePitchHz)} Hz
           </span>
         ) : null}
       </div>
       {activeEngine === "offline-tone" ? (
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-stone-100">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
           <div
-            className={`h-full rounded-full bg-[#0F766E] transition-all duration-75 ${getBucketWidthClass(liveLevel * 100)}`}
+            className={`h-full rounded-full bg-accent transition-all duration-75 ${getBucketWidthClass(liveLevel * 100)}`}
           />
         </div>
       ) : null}
@@ -660,8 +660,8 @@ const PracticeControlsRow: FC<PracticeControlsRowProps> = ({
           aria-pressed={autoStopOnSilence}
           className={`min-h-[32px] rounded-lg border px-2.5 text-xs font-medium transition-colors ${
             autoStopOnSilence
-              ? "border-[#0F766E]/40 bg-[#0F766E]/10 text-[#0F766E]"
-              : "border-stone-200 bg-white text-stone-600 hover:text-stone-900"
+              ? "border-accent-border bg-accent-soft text-accent"
+              : "border-border bg-surface text-ink-secondary hover:text-ink"
           }`}
         >
           {autoStopOnSilence ? "Auto-stop on silence: On" : "Auto-stop on silence: Off"}
@@ -683,16 +683,16 @@ const PracticeErrorBanner: FC<PracticeErrorBannerProps> = ({
   micPermissionBlocked,
   onOpenAppSettings,
 }) => (
-  <div className="mt-3 space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+  <div className="mt-3 space-y-2 rounded-lg border border-warning-border bg-warning-soft px-3 py-2 text-xs text-warning-ink">
     <div className="flex items-start gap-2">
-      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" aria-hidden="true" />
+      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
       <span>{errorMessage}</span>
     </div>
     {micPermissionBlocked && isNativeAndroid() ? (
       <button
         type="button"
         onClick={onOpenAppSettings}
-        className="inline-flex min-h-[32px] items-center rounded-lg border border-amber-300 bg-white px-2.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100"
+        className="inline-flex min-h-[32px] items-center rounded-lg border border-warning-border bg-surface px-2.5 text-[11px] font-semibold text-warning-ink hover:bg-warning-soft"
       >
         Open Android App Settings
       </button>
@@ -1070,7 +1070,7 @@ export const PracticePanel: FC<PracticePanelProps> = ({
   const showEngineSwitcher = isOnline && webSpeechSupported && offlineAcousticSupported;
 
   return (
-    <div className="mt-6 rounded-xl border border-stone-200 bg-stone-50/70 p-4 text-left">
+    <div className="mt-6 rounded-xl border border-border bg-surface-subtle p-4 text-left">
       <PracticeHeader
         region={region}
         activeEngine={activeEngine}
@@ -1091,7 +1091,7 @@ export const PracticePanel: FC<PracticePanelProps> = ({
         onToggleAutoStop={toggleAutoStop}
       />
 
-      <div className="mt-3 flex flex-wrap gap-1 rounded-xl bg-stone-200/70 p-1">
+      <div className="mt-3 flex flex-wrap gap-1 rounded-xl bg-surface-muted p-1">
         {REGION_CITY_BUTTONS.map((item) => (
           <RegionSelectorButton
             key={item.region}
@@ -1119,8 +1119,8 @@ export const PracticePanel: FC<PracticePanelProps> = ({
       />
 
       {!micAvailable ? (
-        <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-stone-200 bg-white p-3 text-xs text-stone-600">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-stone-500" aria-hidden="true" />
+        <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-border bg-surface p-3 text-xs text-ink-secondary">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" aria-hidden="true" />
           <p className="leading-relaxed">
             Microphone recording is unavailable in this browser. Use the interactive syllable tone
             chips above to drill tones offline.

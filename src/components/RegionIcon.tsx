@@ -9,9 +9,9 @@ const REGION_ICON_SRC: Record<DialectRegion, string> = {
 };
 
 const REGION_FALLBACK_STYLE: Record<DialectRegion, { bg: string; letter: string }> = {
-  north: { bg: "bg-rose-700 text-white", letter: "N" },
-  central: { bg: "bg-fuchsia-700 text-white", letter: "C" },
-  south: { bg: "bg-emerald-800 text-white", letter: "S" },
+  north: { bg: "bg-danger text-accent-fg", letter: "N" },
+  central: { bg: "bg-info text-accent-fg", letter: "C" },
+  south: { bg: "bg-accent text-accent-fg", letter: "S" },
 };
 
 interface RegionIconProps {

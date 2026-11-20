@@ -344,8 +344,17 @@ const COMMON_UNACCENTED_VI = new Set([
 
 const IGNORED_GLUE_WORDS = new Set(["the", "is", "are", "am", "of", "to", "in", "on", "at"]);
 
+const MAX_NORMALIZE_CACHE_SIZE = 4096;
+const normalizeTextCache = new Map<string, string>();
+
 export function normalizeText(text: string): string {
-  return text
+  if (!text) return "";
+  const cached = normalizeTextCache.get(text);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const normalized = text
     .toLowerCase()
     .replace(/đ/g, "d")
     .normalize("NFD")
@@ -353,6 +362,102 @@ export function normalizeText(text: string): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (normalizeTextCache.size >= MAX_NORMALIZE_CACHE_SIZE) {
+    const oldestKey = normalizeTextCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      normalizeTextCache.delete(oldestKey);
+    }
+  }
+  normalizeTextCache.set(text, normalized);
+  return normalized;
+}
+
+interface IndexedDictEntry {
+  enNorm: string;
+  enCleanNorm: string;
+  viNorm: string;
+  northNorm: string;
+  centralNorm: string;
+  southNorm: string;
+  aliasNorms: string[];
+  viFormsNorm: string[];
+  sliceViFormsNorm: string[];
+  filterHaystack: string;
+}
+
+const dictEntryIndexCache = new WeakMap<DictEntry, IndexedDictEntry>();
+
+function getIndexedDictEntry(entry: DictEntry): IndexedDictEntry {
+  const existing = dictEntryIndexCache.get(entry);
+  if (existing) return existing;
+
+  const enNorm = normalizeText(entry.en);
+  const enCleanNorm = normalizeText(entry.en.replace(/\([^)]*\)/g, ""));
+  const viNorm = normalizeText(entry.vi);
+  const northNorm = entry.north ? normalizeText(entry.north) : "";
+  const centralNorm = entry.central ? normalizeText(entry.central) : "";
+  const southNorm = entry.south ? normalizeText(entry.south) : "";
+  const aliasNorms = (entry.aliases ?? []).map(normalizeText);
+  const viFormsNorm = [viNorm, northNorm, centralNorm, southNorm].filter((s) => s.length > 0);
+  const baseVi = (entry.vi.split("•")[0] ?? entry.vi).replace(/\([^)]*\)/g, "");
+  const sliceViFormsNorm = [northNorm, centralNorm, southNorm, normalizeText(baseVi)].filter(
+    (s) => s.length > 0,
+  );
+  const filterHaystack = [enNorm, viNorm, northNorm, centralNorm, southNorm, ...aliasNorms]
+    .filter(Boolean)
+    .join("\n");
+
+  const indexed: IndexedDictEntry = {
+    enNorm,
+    enCleanNorm,
+    viNorm,
+    northNorm,
+    centralNorm,
+    southNorm,
+    aliasNorms,
+    viFormsNorm,
+    sliceViFormsNorm,
+    filterHaystack,
+  };
+  dictEntryIndexCache.set(entry, indexed);
+  return indexed;
+}
+
+let enViSliceLookupMap: Map<string, DictEntry> | null = null;
+let viEnSliceLookupMap: Map<string, DictEntry> | null = null;
+
+function ensureSliceLookupMaps(): {
+  enVi: Map<string, DictEntry>;
+  viEn: Map<string, DictEntry>;
+} {
+  if (enViSliceLookupMap && viEnSliceLookupMap) {
+    return { enVi: enViSliceLookupMap, viEn: viEnSliceLookupMap };
+  }
+
+  const enVi = new Map<string, DictEntry>();
+  const viEn = new Map<string, DictEntry>();
+
+  for (const entry of DICTIONARY_ENTRIES) {
+    const idx = getIndexedDictEntry(entry);
+    if (idx.enCleanNorm && !enVi.has(idx.enCleanNorm)) {
+      enVi.set(idx.enCleanNorm, entry);
+    }
+    for (const alias of idx.aliasNorms) {
+      if (alias && !enVi.has(alias)) {
+        enVi.set(alias, entry);
+      }
+    }
+    for (const form of idx.sliceViFormsNorm) {
+      if (form && !viEn.has(form)) {
+        viEn.set(form, entry);
+      }
+    }
+  }
+
+  enViSliceLookupMap = enVi;
+  viEnSliceLookupMap = viEn;
+  return { enVi, viEn };
 }
 
 export function detectDirection(query: string): "en-vi" | "vi-en" {
@@ -386,14 +491,7 @@ export function filterDictionaryEntries(
   return entries.filter((entry) => {
     if (partOfSpeech !== "all" && entry.partOfSpeech !== partOfSpeech) return false;
     if (!q) return true;
-    return (
-      normalizeText(entry.en).includes(q) ||
-      normalizeText(entry.vi).includes(q) ||
-      (entry.north ? normalizeText(entry.north).includes(q) : false) ||
-      (entry.central ? normalizeText(entry.central).includes(q) : false) ||
-      (entry.south ? normalizeText(entry.south).includes(q) : false) ||
-      (entry.aliases ?? []).some((a) => normalizeText(a).includes(q))
-    );
+    return getIndexedDictEntry(entry).filterHaystack.includes(q);
   });
 }
 
@@ -417,32 +515,71 @@ function scoreVietnamesePhrase(normQuery: string, variants: string[]): number {
   return bestHits > 0 ? (bestHits / qWords.length) * 55 : 0;
 }
 
+interface IndexedPhrase {
+  enNorm: string;
+  variantsNorm: [string, string, string];
+}
+
+const phraseIndexCache = new WeakMap<Phrase, IndexedPhrase>();
+
+function getIndexedPhrase(phrase: Phrase): IndexedPhrase {
+  const cached = phraseIndexCache.get(phrase);
+  if (cached) return cached;
+  const indexed: IndexedPhrase = {
+    enNorm: normalizeText(phrase.english),
+    variantsNorm: [
+      normalizeText(phrase.north),
+      normalizeText(phrase.central),
+      normalizeText(phrase.south),
+    ],
+  };
+  phraseIndexCache.set(phrase, indexed);
+  return indexed;
+}
+
+export function findMatchingLibraryPhrase(
+  phrases: Phrase[],
+  enText: string,
+  viText: string,
+  region: DialectRegion,
+): Phrase | undefined {
+  const normEn = normalizeText(enText);
+  const normVi = normalizeText(viText);
+  const regionIdx = region === "north" ? 0 : region === "central" ? 1 : 2;
+  return phrases.find((phrase) => {
+    const indexed = getIndexedPhrase(phrase);
+    return (
+      (normEn.length > 0 && indexed.enNorm === normEn) ||
+      (normVi.length > 0 &&
+        (indexed.variantsNorm[regionIdx] === normVi || indexed.variantsNorm.includes(normVi)))
+    );
+  });
+}
+
 function findMatchedPhrases(
   normQuery: string,
   direction: "en-vi" | "vi-en",
   phrases: Phrase[],
 ): { phrase: Phrase; score: number }[] {
-  return phrases
-    .map((phrase) => {
-      const score =
-        direction === "en-vi"
-          ? scoreEnglishPhrase(normQuery, normalizeText(phrase.english))
-          : scoreVietnamesePhrase(normQuery, [
-              normalizeText(phrase.north),
-              normalizeText(phrase.central),
-              normalizeText(phrase.south),
-            ]);
-      return { phrase, score };
-    })
-    .filter((item) => item.score >= 30)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
+  const matched: { phrase: Phrase; score: number }[] = [];
+  for (const phrase of phrases) {
+    const indexed = getIndexedPhrase(phrase);
+    const score =
+      direction === "en-vi"
+        ? scoreEnglishPhrase(normQuery, indexed.enNorm)
+        : scoreVietnamesePhrase(normQuery, indexed.variantsNorm);
+    if (score >= 30) {
+      matched.push({ phrase, score });
+    }
+  }
+  matched.sort((a, b) => b.score - a.score);
+  return matched.slice(0, 4);
 }
 
 function scoreDictEntry(normQuery: string, direction: "en-vi" | "vi-en", entry: DictEntry): number {
+  const indexed = getIndexedDictEntry(entry);
   if (direction === "en-vi") {
-    const enNorm = normalizeText(entry.en);
-    const aliasNorms = (entry.aliases ?? []).map(normalizeText);
+    const { enNorm, aliasNorms } = indexed;
     if (enNorm === normQuery || aliasNorms.includes(normQuery)) return 100;
     if (enNorm.includes(normQuery) || aliasNorms.some((a) => a.includes(normQuery))) return 72;
     if (
@@ -454,13 +591,10 @@ function scoreDictEntry(normQuery: string, direction: "en-vi" | "vi-en", entry: 
     return 0;
   }
 
-  const viForms = [entry.vi, entry.north, entry.central, entry.south]
-    .filter((s): s is string => typeof s === "string" && s.length > 0)
-    .map(normalizeText);
-
-  if (viForms.some((v) => v === normQuery)) return 100;
-  if (viForms.some((v) => v.includes(normQuery))) return 72;
-  if (viForms.some((v) => v.length >= 2 && normQuery.includes(v))) return 62;
+  const { viFormsNorm } = indexed;
+  if (viFormsNorm.some((v) => v === normQuery)) return 100;
+  if (viFormsNorm.some((v) => v.includes(normQuery))) return 72;
+  if (viFormsNorm.some((v) => v.length >= 2 && normQuery.includes(v))) return 62;
   return 0;
 }
 
@@ -490,19 +624,20 @@ function expandSliceCandidates(slice: string): string[] {
   return candidates;
 }
 
-function matchesEntrySlice(entry: DictEntry, slice: string, direction: "en-vi" | "vi-en"): boolean {
+function findEntryMatchingSlice(
+  slice: string,
+  direction: "en-vi" | "vi-en",
+): DictEntry | undefined {
+  const { enVi, viEn } = ensureSliceLookupMaps();
   if (direction === "en-vi") {
-    const enClean = normalizeText(entry.en.replace(/\([^)]*\)/g, ""));
-    const aliases = (entry.aliases ?? []).map(normalizeText);
     const candidates = expandSliceCandidates(slice);
-    return candidates.some((c) => enClean === c || aliases.includes(c));
+    for (const candidate of candidates) {
+      const hit = enVi.get(candidate);
+      if (hit) return hit;
+    }
+    return undefined;
   }
-
-  const baseVi = (entry.vi.split("•")[0] ?? entry.vi).replace(/\([^)]*\)/g, "");
-  const forms = [entry.north, entry.central, entry.south, baseVi]
-    .filter((s): s is string => typeof s === "string" && s.length > 0)
-    .map(normalizeText);
-  return forms.includes(slice);
+  return viEn.get(slice);
 }
 
 function tryBuildNumericTokenEntry(
@@ -537,7 +672,7 @@ function matchLongestTokenAt(
 ): { len: number; slice: string; targetText: string; entry: DictEntry } | null {
   for (let len = Math.min(4, words.length - idx); len >= 1; len--) {
     const slice = words.slice(idx, idx + len).join(" ");
-    const found = DICTIONARY_ENTRIES.find((entry) => matchesEntrySlice(entry, slice, direction));
+    const found = findEntryMatchingSlice(slice, direction);
     if (found) {
       const cleanEn = found.en.replace(/\s*\([^)]*\)/g, "").split("/")[0] ?? found.en;
       const targetText =
@@ -850,13 +985,11 @@ export function buildPhraseFromTranslation(
     ? (result.regionalVariants?.south ?? result.primaryTranslation)
     : result.query;
 
+  const normQuery = normalizeText(result.query);
   const exactMatchedPhrase = result.matchedPhrases.find((p) => {
-    if (isEnToVi) return normalizeText(p.english) === normalizeText(result.query);
-    return (
-      normalizeText(p.north) === normalizeText(result.query) ||
-      normalizeText(p.central) === normalizeText(result.query) ||
-      normalizeText(p.south) === normalizeText(result.query)
-    );
+    const indexed = getIndexedPhrase(p);
+    if (isEnToVi) return indexed.enNorm === normQuery;
+    return indexed.variantsNorm.includes(normQuery);
   });
 
   return {

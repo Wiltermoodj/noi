@@ -58,7 +58,7 @@ const RegionTabButton: FC<RegionTabButtonProps> = ({ region, active, onSelect })
       type="button"
       onClick={handleClick}
       className={`min-h-[36px] flex-1 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors ${
-        active ? "bg-white text-stone-900 shadow-xs" : "text-stone-600 hover:text-stone-900"
+        active ? "bg-surface text-ink shadow-xs" : "text-ink-secondary hover:text-ink"
       }`}
     >
       {DIALECT_META[region].label}
@@ -120,7 +120,7 @@ export const ShowBigModal: FC<ShowBigModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/75 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-backdrop p-4 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -133,16 +133,16 @@ export const ShowBigModal: FC<ShowBigModalProps> = ({
         className="fixed inset-0"
       />
 
-      <div className="relative z-10 flex w-full max-w-2xl flex-col justify-between rounded-3xl bg-white p-6 shadow-2xl sm:p-10">
+      <div className="relative z-10 flex w-full max-w-2xl flex-col justify-between rounded-3xl bg-surface p-6 shadow-2xl sm:p-10">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-xs font-medium text-stone-500">
+          <span className="text-xs font-medium text-ink-muted">
             Show to Local · {DIALECT_META[settings.region].fullRegionLabel}
           </span>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close large display"
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -151,18 +151,18 @@ export const ShowBigModal: FC<ShowBigModalProps> = ({
         <div className="my-8 text-center sm:my-12">
           <h2
             id={titleId}
-            className="font-display text-balance text-4xl font-bold leading-tight tracking-tight text-stone-950 sm:text-5xl md:text-6xl"
+            className="font-display text-balance text-4xl font-bold leading-tight tracking-tight text-ink sm:text-5xl md:text-6xl"
           >
             {vietnamese}
           </h2>
           {phonetic ? (
-            <p className="mt-4 text-base italic text-[#0F766E] sm:text-lg">{phonetic}</p>
+            <p className="mt-4 text-base italic text-accent sm:text-lg">{phonetic}</p>
           ) : null}
-          <p className="mt-3 text-base text-stone-600 sm:text-lg">{payload.english}</p>
+          <p className="mt-3 text-base text-ink-secondary sm:text-lg">{payload.english}</p>
         </div>
 
-        <div className="space-y-3 border-t border-stone-100 pt-5">
-          <div className="flex items-center gap-1 rounded-xl bg-stone-100 p-1">
+        <div className="space-y-3 border-t border-border-subtle pt-5">
+          <div className="flex items-center gap-1 rounded-xl bg-surface-muted p-1">
             {DIALECT_REGIONS.map((r) => (
               <RegionTabButton
                 key={r}
@@ -177,7 +177,7 @@ export const ShowBigModal: FC<ShowBigModalProps> = ({
             <button
               type="button"
               onClick={handleSpeak}
-              className="col-span-2 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#0F766E] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#0D655E] sm:col-span-1"
+              className="col-span-2 flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-accent px-5 text-sm font-semibold text-accent-fg transition-colors hover:bg-accent-hover sm:col-span-1"
             >
               {isBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -190,12 +190,12 @@ export const ShowBigModal: FC<ShowBigModalProps> = ({
             <button
               type="button"
               onClick={handleCopy}
-              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-50"
+              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-medium text-ink transition-colors hover:bg-surface-subtle"
             >
               {copied ? (
-                <Check className="h-4 w-4 text-[#0F766E]" aria-hidden="true" />
+                <Check className="h-4 w-4 text-accent" aria-hidden="true" />
               ) : (
-                <Copy className="h-4 w-4 text-stone-500" aria-hidden="true" />
+                <Copy className="h-4 w-4 text-ink-muted" aria-hidden="true" />
               )}
               <span>{copied ? "Copied" : "Copy"}</span>
             </button>
@@ -203,7 +203,7 @@ export const ShowBigModal: FC<ShowBigModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex min-h-[48px] items-center justify-center rounded-xl bg-stone-900 px-4 text-sm font-medium text-white transition-colors hover:bg-stone-800"
+              className="flex min-h-[48px] items-center justify-center rounded-xl bg-surface-inverse px-4 text-sm font-medium text-ink-inverse transition-colors hover:opacity-90"
             >
               Done
             </button>

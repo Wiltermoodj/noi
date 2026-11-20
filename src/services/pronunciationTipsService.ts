@@ -382,12 +382,24 @@ function interleaveTips(
   return result;
 }
 
+const MAX_PRONUNCIATION_TIPS_CACHE_SIZE = 512;
+const pronunciationTipsCache = new Map<string, PhrasePronunciationTip[]>();
+
 export function getPhrasePronunciationTips(
   phraseText: string,
   region: DialectRegion,
   maxTips = 3,
 ): PhrasePronunciationTip[] {
-  const tokens = tokenizePhraseWords(phraseText);
+  const trimmed = phraseText.trim();
+  if (!trimmed) return [];
+
+  const cacheKey = `${region}:${String(maxTips)}:${trimmed}`;
+  const cached = pronunciationTipsCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const tokens = tokenizePhraseWords(trimmed);
   if (tokens.length === 0) return [];
 
   const dialectTips = collectDialectTips(tokens, region);
@@ -395,18 +407,27 @@ export function getPhrasePronunciationTips(
   const soundTips = collectConsonantAndVowelTips(tokens);
 
   const selected = interleaveTips(dialectTips, toneTips, soundTips, maxTips);
-  if (selected.length > 0) return selected;
+  const result: PhrasePronunciationTip[] =
+    selected.length > 0
+      ? selected
+      : [
+          {
+            id: `region-default-${region}`,
+            category: "dialect",
+            title: `${DIALECT_META[region].regionName} rhythm`,
+            detail: DIALECT_META[region].pronunciationFocus,
+            words: tokens.slice(0, 2).map((t) => t.display),
+          },
+        ];
 
-  const meta = DIALECT_META[region];
-  return [
-    {
-      id: `region-default-${region}`,
-      category: "dialect",
-      title: `${meta.regionName} rhythm`,
-      detail: meta.pronunciationFocus,
-      words: tokens.slice(0, 2).map((t) => t.display),
-    },
-  ];
+  if (pronunciationTipsCache.size >= MAX_PRONUNCIATION_TIPS_CACHE_SIZE) {
+    const oldestKey = pronunciationTipsCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      pronunciationTipsCache.delete(oldestKey);
+    }
+  }
+  pronunciationTipsCache.set(cacheKey, result);
+  return result;
 }
 
 export function getToneReferenceItems(region: DialectRegion): ToneReferenceItem[] {

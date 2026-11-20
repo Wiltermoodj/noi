@@ -21,7 +21,16 @@ import {
   type SpeechVoiceInfo,
   type VoiceInventory,
 } from "./audio/speechVoicePicker";
-import { buildTtsCacheUrl, isLikelyValidAudioBlob, TtsCacheStore } from "./audio/ttsCacheStore";
+import {
+  buildTtsCacheUrl,
+  isLikelyValidAudioBlob,
+  OFFLINE_AUDIO_MEMORY_BUDGET_BYTES,
+  OFFLINE_AUDIO_MEMORY_MAX_ENTRIES,
+  OFFLINE_AUDIO_STORAGE_BUDGET_BYTES,
+  type OfflineAudioMemoryStats,
+  type OfflineAudioStorageStats,
+  TtsCacheStore,
+} from "./audio/ttsCacheStore";
 import { stretchAudioChannelsWithMapAsync } from "./audioTimeStretchAsync";
 import { buildApiUrl, isCloudApiConfigured, isNativeAndroid } from "./nativePlatform";
 import {
@@ -84,6 +93,23 @@ export interface OfflinePackProgress {
   quotaExceeded?: boolean;
   cloudUnavailableMessage?: string;
   retryAfterSeconds?: number;
+}
+
+export interface OfflineAudioBudgetStats {
+  memoryBlobs: OfflineAudioMemoryStats;
+  decodedBuffers: {
+    entries: number;
+    bytes: number;
+    maxEntries: number;
+    maxBytes: number;
+  };
+  stretchedBuffers: {
+    entries: number;
+    bytes: number;
+    maxEntries: number;
+    maxBytes: number;
+  };
+  storage: OfflineAudioStorageStats;
 }
 
 type SpeakingListener = (status: SpeakingStatus) => void;
@@ -198,11 +224,41 @@ interface ClipSpec {
   cacheUrl: string;
 }
 
+interface CachedStretchedAudio {
+  readonly decoded: AudioBuffer;
+  readonly buffer: AudioBuffer;
+  readonly timeline: StretchTimelineMap;
+  readonly byteSize: number;
+}
+
+const DECODED_PCM_MAX_BUFFERS = 64;
+const DECODED_PCM_BUDGET_BYTES = 48 * 1024 * 1024;
+const STRETCHED_PCM_MAX_BUFFERS = 32;
+const STRETCHED_PCM_BUDGET_BYTES = 32 * 1024 * 1024;
+const ALL_VOICE_PROFILES: readonly TtsVoiceProfile[] = ["auto", "female", "male"];
+
+function estimateAudioBufferBytes(buffer: AudioBuffer): number {
+  const channels = Math.max(1, buffer.numberOfChannels);
+  const length = Math.max(0, buffer.length);
+  return channels * length * 4;
+}
+
 class OfflineAudioService {
   private readonly listeners = new Set<SpeakingListener>();
-  private readonly cacheStore = new TtsCacheStore();
-  private readonly decodedBufferCache = new WeakMap<Blob, AudioBuffer>();
-  private readonly inflightPrefetches = new Set<string>();
+  private readonly cacheStore = new TtsCacheStore({
+    maxMemoryEntries: OFFLINE_AUDIO_MEMORY_MAX_ENTRIES,
+    maxMemoryBytes: OFFLINE_AUDIO_MEMORY_BUDGET_BYTES,
+    maxStorageBytes: OFFLINE_AUDIO_STORAGE_BUDGET_BYTES,
+  });
+  private readonly decodedBufferCache = new Map<Blob, AudioBuffer>();
+  private decodedBufferBytes = 0;
+  private readonly maxDecodedBuffers = DECODED_PCM_MAX_BUFFERS;
+  private readonly maxDecodedBufferBytes = DECODED_PCM_BUDGET_BYTES;
+  private readonly stretchedBufferCache = new Map<string, CachedStretchedAudio>();
+  private stretchedBufferBytes = 0;
+  private readonly maxStretchedBuffers = STRETCHED_PCM_MAX_BUFFERS;
+  private readonly maxStretchedBufferBytes = STRETCHED_PCM_BUDGET_BYTES;
+  private readonly inflightPrefetches = new Map<string, Promise<Blob | null>>();
   private readonly externalStoppers = new Set<() => void>();
 
   private currentTimeout: number | null = null;
@@ -319,10 +375,21 @@ class OfflineAudioService {
   }
 
   private emit(patch: Partial<SpeakingStatus>): void {
-    this.currentStatus = {
+    const nextStatus: SpeakingStatus = {
       ...IDLE_SPEAKING_STATUS,
       ...patch,
     };
+    if (
+      nextStatus.isSpeaking === this.currentStatus.isSpeaking &&
+      nextStatus.isLoading === this.currentStatus.isLoading &&
+      nextStatus.activeLang === this.currentStatus.activeLang &&
+      nextStatus.activeRegion === this.currentStatus.activeRegion &&
+      nextStatus.activeText === this.currentStatus.activeText &&
+      nextStatus.audioError === this.currentStatus.audioError
+    ) {
+      return;
+    }
+    this.currentStatus = nextStatus;
     for (const fn of this.listeners) {
       fn(this.currentStatus);
     }
@@ -452,14 +519,45 @@ class OfflineAudioService {
     onComplete(true);
   }
 
+  private rememberDecodedBuffer(blob: Blob, decoded: AudioBuffer): void {
+    const byteSize = estimateAudioBufferBytes(decoded);
+    const existing = this.decodedBufferCache.get(blob);
+    if (existing) {
+      this.decodedBufferCache.delete(blob);
+      this.decodedBufferBytes = Math.max(
+        0,
+        this.decodedBufferBytes - estimateAudioBufferBytes(existing),
+      );
+    }
+    while (
+      this.decodedBufferCache.size >= this.maxDecodedBuffers ||
+      (this.decodedBufferCache.size > 0 &&
+        this.decodedBufferBytes + byteSize > this.maxDecodedBufferBytes)
+    ) {
+      const oldest = this.decodedBufferCache.keys().next().value;
+      if (oldest === undefined) break;
+      const oldestBuf = this.decodedBufferCache.get(oldest);
+      this.decodedBufferCache.delete(oldest);
+      if (oldestBuf) {
+        this.decodedBufferBytes = Math.max(
+          0,
+          this.decodedBufferBytes - estimateAudioBufferBytes(oldestBuf),
+        );
+      }
+    }
+    this.decodedBufferCache.set(blob, decoded);
+    this.decodedBufferBytes += byteSize;
+  }
+
   private async decodeBlobToAudioBuffer(ctx: AudioContext, blob: Blob): Promise<AudioBuffer> {
     const cached = this.decodedBufferCache.get(blob);
     if (cached?.sampleRate === ctx.sampleRate) {
+      this.rememberDecodedBuffer(blob, cached);
       return cached;
     }
     const arrayBuffer = await blob.arrayBuffer();
-    const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
-    this.decodedBufferCache.set(blob, decoded);
+    const decoded = await ctx.decodeAudioData(arrayBuffer);
+    this.rememberDecodedBuffer(blob, decoded);
     return decoded;
   }
 
@@ -472,7 +570,11 @@ class OfflineAudioService {
     if (outLength === 0) return null;
     const audioBuffer = ctx.createBuffer(channels.length, outLength, sampleRate);
     channels.forEach((data, idx) => {
-      audioBuffer.copyToChannel(new Float32Array(data), idx);
+      const channelView: Float32Array<ArrayBuffer> =
+        data.buffer instanceof ArrayBuffer
+          ? (data as Float32Array<ArrayBuffer>)
+          : new Float32Array(data);
+      audioBuffer.copyToChannel(channelView, idx);
     });
     return audioBuffer;
   }
@@ -481,7 +583,8 @@ class OfflineAudioService {
     const safeStart = Math.max(0, Math.min(decoded.length, startSample));
     const channels: Float32Array[] = [];
     for (let c = 0; c < decoded.numberOfChannels; c++) {
-      channels.push(decoded.getChannelData(c).slice(safeStart));
+      const channelData = decoded.getChannelData(c);
+      channels.push(safeStart === 0 ? channelData : channelData.subarray(safeStart));
     }
     return channels;
   }
@@ -831,6 +934,69 @@ class OfflineAudioService {
     }
   }
 
+  private rememberStretchedAudio(cacheKey: string, entry: CachedStretchedAudio): void {
+    const existing = this.stretchedBufferCache.get(cacheKey);
+    if (existing) {
+      this.stretchedBufferCache.delete(cacheKey);
+      this.stretchedBufferBytes = Math.max(0, this.stretchedBufferBytes - existing.byteSize);
+    }
+    while (
+      this.stretchedBufferCache.size >= this.maxStretchedBuffers ||
+      (this.stretchedBufferCache.size > 0 &&
+        this.stretchedBufferBytes + entry.byteSize > this.maxStretchedBufferBytes)
+    ) {
+      const oldestKey = this.stretchedBufferCache.keys().next().value;
+      if (oldestKey === undefined) break;
+      const oldestEntry = this.stretchedBufferCache.get(oldestKey);
+      this.stretchedBufferCache.delete(oldestKey);
+      if (oldestEntry) {
+        this.stretchedBufferBytes = Math.max(0, this.stretchedBufferBytes - oldestEntry.byteSize);
+      }
+    }
+    this.stretchedBufferCache.set(cacheKey, entry);
+    this.stretchedBufferBytes += entry.byteSize;
+  }
+
+  private async getOrBuildStretchedAudio(
+    ctx: AudioContext,
+    decoded: AudioBuffer,
+    text: string,
+    speedFactor: number,
+    baseClipIsSlow: boolean,
+  ): Promise<{ buffer: AudioBuffer; timeline: StretchTimelineMap } | null> {
+    const expectedSyllables = countVietnameseSyllables(text);
+    const speedKey = String(Math.round(speedFactor * 1000));
+    const cacheKey = `${speedKey}:${baseClipIsSlow ? "1" : "0"}:${String(expectedSyllables)}:${String(decoded.sampleRate)}:${text}`;
+    const cached = this.stretchedBufferCache.get(cacheKey);
+    if (cached?.decoded === decoded && cached.buffer.sampleRate === ctx.sampleRate) {
+      this.rememberStretchedAudio(cacheKey, cached);
+      return { buffer: cached.buffer, timeline: cached.timeline };
+    }
+
+    const rawChannels = this.extractSlicedChannels(decoded, 0);
+    const stretched = await stretchAudioChannelsWithMapAsync(
+      rawChannels,
+      decoded.sampleRate,
+      speedFactor,
+      undefined,
+      {
+        ...(expectedSyllables > 0 ? { expectedSyllableCount: expectedSyllables } : {}),
+        baseClipIsSlow,
+      },
+    );
+    if ((ctx.state as string) === "closed") return null;
+    const buffer = this.buildAudioBuffer(ctx, stretched.channels, decoded.sampleRate);
+    if (!buffer) return null;
+
+    this.rememberStretchedAudio(cacheKey, {
+      decoded,
+      buffer,
+      timeline: stretched.timeline,
+      byteSize: estimateAudioBufferBytes(buffer),
+    });
+    return { buffer, timeline: stretched.timeline };
+  }
+
   private async playStretchedAudioBuffer(
     blob: Blob,
     token: number,
@@ -851,22 +1017,16 @@ class OfflineAudioService {
       if (this.sequenceToken !== token) return true;
       if ((ctx.state as string) === "closed") return false;
 
-      const rawChannels = this.extractSlicedChannels(decoded, 0);
-      const expectedSyllables = countVietnameseSyllables(text);
-      const stretched = await stretchAudioChannelsWithMapAsync(
-        rawChannels,
-        decoded.sampleRate,
+      const prepared = await this.getOrBuildStretchedAudio(
+        ctx,
+        decoded,
+        text,
         speedFactor,
-        undefined,
-        {
-          ...(expectedSyllables > 0 ? { expectedSyllableCount: expectedSyllables } : {}),
-          baseClipIsSlow,
-        },
+        baseClipIsSlow,
       );
       if (this.sequenceToken !== token) return true;
-      if ((ctx.state as string) === "closed") return false;
-      const stretchedBuffer = this.buildAudioBuffer(ctx, stretched.channels, decoded.sampleRate);
-      if (!stretchedBuffer) return false;
+      if (!prepared) return false;
+      const { buffer: stretchedBuffer, timeline: stretchedTimeline } = prepared;
 
       return await new Promise<boolean>((resolve) => {
         const source = ctx.createBufferSource();
@@ -892,7 +1052,7 @@ class OfflineAudioService {
           startedAtCtxTime: ctx.currentTime,
           startOriginalSec: 0,
           startOffsetSec: 0,
-          timeline: stretched.timeline,
+          timeline: stretchedTimeline,
           source,
           gain,
           safetyTimerId: null,
@@ -1470,17 +1630,51 @@ class OfflineAudioService {
     return this.playAudioBlob(cachedBlob, token, region, cleanText, speedFactor, baseClipIsSlow);
   }
 
-  private async tryPlayCachedFallbackNormal(
+  private async tryPlayCachedFallbackVariants(
     cleanText: string,
     region: DialectRegion,
+    requestedSlow: boolean,
     voiceProfile: TtsVoiceProfile,
     token: number,
     speedFactor: number,
-    enabled: boolean,
+    allowCrossProfile: boolean,
   ): Promise<boolean> {
-    if (!enabled) return false;
-    const normalCacheUrl = buildTtsCacheUrl(cleanText, region, false, voiceProfile);
-    return this.tryPlayCachedAudio(normalCacheUrl, token, region, cleanText, speedFactor, false);
+    const altSlow = !requestedSlow;
+    const sameProfileAltSpeedUrl = buildTtsCacheUrl(cleanText, region, altSlow, voiceProfile);
+    if (
+      await this.tryPlayCachedAudio(
+        sameProfileAltSpeedUrl,
+        token,
+        region,
+        cleanText,
+        speedFactor,
+        altSlow,
+      )
+    ) {
+      return true;
+    }
+    if (this.sequenceToken !== token || !allowCrossProfile) return false;
+
+    for (const candidateProfile of ALL_VOICE_PROFILES) {
+      if (candidateProfile === voiceProfile) continue;
+      for (const candidateSlow of [requestedSlow, altSlow]) {
+        const candidateUrl = buildTtsCacheUrl(cleanText, region, candidateSlow, candidateProfile);
+        if (
+          await this.tryPlayCachedAudio(
+            candidateUrl,
+            token,
+            region,
+            cleanText,
+            speedFactor,
+            candidateSlow,
+          )
+        ) {
+          return true;
+        }
+        if (this.sequenceToken !== token) return false;
+      }
+    }
+    return false;
   }
 
   private async speakVietnameseDeviceOnly(
@@ -1510,13 +1704,14 @@ class OfflineAudioService {
       return;
     }
     if (
-      await this.tryPlayCachedFallbackNormal(
+      await this.tryPlayCachedFallbackVariants(
         cleanText,
         region,
+        cloudSlow,
         voiceProfile,
         token,
         blobSpeedFactor,
-        cloudSlow,
+        true,
       )
     ) {
       return;
@@ -1576,15 +1771,44 @@ class OfflineAudioService {
     this.currentAbort = controller;
 
     try {
-      const { blob } = await this.fetchCloudTtsWithMeta(
-        cleanText,
-        region,
-        slow,
-        voiceProfile,
-        controller,
-      );
+      let blob: Blob | null = null;
+      const pendingPrefetch = this.inflightPrefetches.get(cacheUrl);
+      if (pendingPrefetch) {
+        blob = await new Promise<Blob | null>((resolve) => {
+          const onAbort = () => {
+            resolve(null);
+          };
+          controller.signal.addEventListener("abort", onAbort, { once: true });
+          void pendingPrefetch.then(
+            (res) => {
+              controller.signal.removeEventListener("abort", onAbort);
+              resolve(res);
+            },
+            () => {
+              controller.signal.removeEventListener("abort", onAbort);
+              resolve(null);
+            },
+          );
+        });
+        if (controller.signal.aborted || this.sequenceToken !== token) {
+          return { played: true, cloudError: null };
+        }
+      }
+
+      if (!blob) {
+        const fetched = await this.fetchCloudTtsWithMeta(
+          cleanText,
+          region,
+          slow,
+          voiceProfile,
+          controller,
+        );
+        blob = fetched.blob;
+        if (this.sequenceToken !== token) return { played: true, cloudError: null };
+        await this.cacheStore.write(cacheUrl, blob, true);
+      }
+
       if (this.sequenceToken !== token) return { played: true, cloudError: null };
-      await this.cacheStore.write(cacheUrl, blob, true);
       const played = await this.playAudioBlob(blob, token, region, cleanText, speedFactor, slow);
       return { played, cloudError: null };
     } catch (err) {
@@ -1653,14 +1877,16 @@ class OfflineAudioService {
 
     const isOffline = isNavigatorOffline();
     if (
-      await this.tryPlayCachedFallbackNormal(
+      isOffline &&
+      (await this.tryPlayCachedFallbackVariants(
         cleanText,
         region,
+        cloudSlow,
         voiceProfile,
         token,
         blobSpeedFactor,
-        isOffline && cloudSlow,
-      )
+        true,
+      ))
     ) {
       return;
     }
@@ -1681,14 +1907,16 @@ class OfflineAudioService {
     if (cloudAttempt.played || this.sequenceToken !== token) return;
 
     if (
-      await this.tryPlayCachedFallbackNormal(
+      !isOffline &&
+      (await this.tryPlayCachedFallbackVariants(
         cleanText,
         region,
+        cloudSlow,
         voiceProfile,
         token,
         blobSpeedFactor,
-        !isOffline && cloudSlow,
-      )
+        true,
+      ))
     ) {
       return;
     }
@@ -1860,25 +2088,63 @@ class OfflineAudioService {
     const voiceProfile = options?.ttsVoiceProfile ?? "auto";
     const cacheUrl = buildTtsCacheUrl(cleanText, region, slow, voiceProfile);
 
-    if (this.inflightPrefetches.has(cacheUrl)) return;
-    if (await this.cacheStore.read(cacheUrl)) return;
+    const existingPrefetch = this.inflightPrefetches.get(cacheUrl);
+    if (existingPrefetch) {
+      await existingPrefetch;
+      return;
+    }
+    if (this.cacheStore.hasInMemory(cacheUrl)) return;
 
-    this.inflightPrefetches.add(cacheUrl);
-    try {
-      const controller = new AbortController();
-      const { blob } = await this.fetchCloudTtsWithMeta(
-        cleanText,
-        region,
-        slow,
-        voiceProfile,
-        controller,
-        CLOUD_PREFETCH_TIMEOUT_MS,
-      );
-      await this.cacheStore.write(cacheUrl, blob, true);
-    } catch {
-      // Best-effort background warmup only
-    } finally {
-      this.inflightPrefetches.delete(cacheUrl);
+    const prefetchPromise = (async (): Promise<Blob | null> => {
+      try {
+        const cached = await this.cacheStore.read(cacheUrl);
+        if (cached) return cached;
+        const controller = new AbortController();
+        const { blob } = await this.fetchCloudTtsWithMeta(
+          cleanText,
+          region,
+          slow,
+          voiceProfile,
+          controller,
+          CLOUD_PREFETCH_TIMEOUT_MS,
+        );
+        await this.cacheStore.write(cacheUrl, blob, true);
+        return blob;
+      } catch {
+        // Best-effort background warmup only
+        return null;
+      } finally {
+        this.inflightPrefetches.delete(cacheUrl);
+      }
+    })();
+
+    this.inflightPrefetches.set(cacheUrl, prefetchPromise);
+    await prefetchPromise;
+  }
+
+  private getRegionalPhraseText(phrase: Phrase, region: DialectRegion): string {
+    if (region === "north") return phrase.north.trim();
+    if (region === "central") return phrase.central.trim();
+    return phrase.south.trim();
+  }
+
+  private appendPhraseClipsForSpeed(
+    phrases: Phrase[],
+    regions: DialectRegion[],
+    slow: boolean,
+    voiceProfile: TtsVoiceProfile,
+    seen: Set<string>,
+    clips: ClipSpec[],
+  ): void {
+    for (const phrase of phrases) {
+      for (const region of regions) {
+        const text = this.getRegionalPhraseText(phrase, region);
+        if (!text) continue;
+        const cacheUrl = buildTtsCacheUrl(text, region, slow, voiceProfile);
+        if (seen.has(cacheUrl)) continue;
+        seen.add(cacheUrl);
+        clips.push({ text, region, slow, cacheUrl });
+      }
     }
   }
 
@@ -1887,33 +2153,53 @@ class OfflineAudioService {
     regions: DialectRegion[],
     slow: boolean,
     voiceProfile: TtsVoiceProfile,
+    includeSlow = false,
   ): ClipSpec[] {
     const seen = new Set<string>();
     const clips: ClipSpec[] = [];
-
-    for (const phrase of phrases) {
-      for (const region of regions) {
-        const text = (
-          region === "north" ? phrase.north : region === "central" ? phrase.central : phrase.south
-        ).trim();
-        if (!text) continue;
-        const cacheUrl = buildTtsCacheUrl(text, region, slow, voiceProfile);
-        if (seen.has(cacheUrl)) continue;
-        seen.add(cacheUrl);
-        clips.push({ text, region, slow, cacheUrl });
-      }
+    this.appendPhraseClipsForSpeed(phrases, regions, slow, voiceProfile, seen, clips);
+    if (includeSlow && !slow) {
+      this.appendPhraseClipsForSpeed(phrases, regions, true, voiceProfile, seen, clips);
     }
     return clips;
+  }
+
+  async getOfflineAudioBudgetStats(): Promise<OfflineAudioBudgetStats> {
+    const storage = await this.cacheStore.getStorageStats();
+    return {
+      memoryBlobs: this.cacheStore.getMemoryStats(),
+      decodedBuffers: {
+        entries: this.decodedBufferCache.size,
+        bytes: this.decodedBufferBytes,
+        maxEntries: this.maxDecodedBuffers,
+        maxBytes: this.maxDecodedBufferBytes,
+      },
+      stretchedBuffers: {
+        entries: this.stretchedBufferCache.size,
+        bytes: this.stretchedBufferBytes,
+        maxEntries: this.maxStretchedBuffers,
+        maxBytes: this.maxStretchedBufferBytes,
+      },
+      storage,
+    };
   }
 
   async getPhraseAudioCacheStats(
     phrases: Phrase[],
     regions: DialectRegion[],
-    options?: Pick<SpeakVietnameseOptions, "slow" | "ttsVoiceProfile">,
+    options?: Pick<SpeakVietnameseOptions, "slow" | "ttsVoiceProfile"> & {
+      includeSlow?: boolean | undefined;
+    },
   ): Promise<{ cachedCount: number; totalCount: number }> {
     const slow = options?.slow ?? false;
     const voiceProfile = options?.ttsVoiceProfile ?? "auto";
-    const clips = this.buildPhraseClipList(phrases, regions, slow, voiceProfile);
+    const clips = this.buildPhraseClipList(
+      phrases,
+      regions,
+      slow,
+      voiceProfile,
+      options?.includeSlow === true,
+    );
     if (clips.length === 0) return { cachedCount: 0, totalCount: 0 };
 
     let cachedCount = 0;
@@ -2143,14 +2429,22 @@ class OfflineAudioService {
   async downloadOfflineAudioPack(
     phrases: Phrase[],
     regions: DialectRegion[],
-    options?: Pick<SpeakVietnameseOptions, "slow" | "ttsVoiceProfile">,
+    options?: Pick<SpeakVietnameseOptions, "slow" | "ttsVoiceProfile"> & {
+      includeSlow?: boolean | undefined;
+    },
     onProgress?: (progress: OfflinePackProgress) => void,
     signal?: AbortSignal,
   ): Promise<OfflinePackProgress> {
     this.cacheStore.requestPersistentStorage();
     const slow = options?.slow ?? false;
     const voiceProfile = options?.ttsVoiceProfile ?? "auto";
-    const clips = this.buildPhraseClipList(phrases, regions, slow, voiceProfile);
+    const clips = this.buildPhraseClipList(
+      phrases,
+      regions,
+      slow,
+      voiceProfile,
+      options?.includeSlow === true,
+    );
     const state = {
       completed: 0,
       total: clips.length,

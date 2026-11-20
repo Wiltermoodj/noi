@@ -1,4 +1,4 @@
-import { BookOpen, GraduationCap, SlidersHorizontal, Star } from "lucide-react";
+import { BookOpen, GraduationCap, Moon, SlidersHorizontal, Star, Sun } from "lucide-react";
 import {
   type ComponentType,
   type FC,
@@ -19,7 +19,17 @@ import { PWAUpdatePrompt } from "./components/PWAUpdatePrompt";
 import type { ShowBigPayload } from "./components/ShowBigModal";
 import { ToastBanner, type ToastItem } from "./components/ToastBanner";
 import { useStudyDeck } from "./hooks/useStudyDeck";
-import { initializeNativeShell } from "./services/nativePlatform";
+import { initializeNativeShell, syncNativeStatusBarTheme } from "./services/nativePlatform";
+import type { ThemePreference } from "./types/vietnamese";
+
+function resolveEffectiveDark(theme: ThemePreference): boolean {
+  if (theme === "dark") return true;
+  if (theme === "light") return false;
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  return false;
+}
 
 function clearChunkReloadFlag(reloadFlagKey: string): void {
   try {
@@ -108,7 +118,7 @@ const PronunciationGuideModal = lazyWithRetry(
 
 function TabLoadingFallback() {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-sm text-stone-500">
+    <div className="rounded-2xl border border-border bg-surface p-8 text-center text-sm text-ink-muted">
       Loading view…
     </div>
   );
@@ -147,7 +157,7 @@ const NavTabIcon: FC<{ id: ActiveTab; active: boolean }> = ({ id, active }) => {
     case "phrases":
       return <BookOpen className="h-5 w-5" aria-hidden="true" />;
     case "phrasebook":
-      return <Star className={`h-5 w-5 ${active ? "fill-[#0F766E]" : ""}`} aria-hidden="true" />;
+      return <Star className={`h-5 w-5 ${active ? "fill-accent" : ""}`} aria-hidden="true" />;
     case "translate":
       return <GoogleTranslateIcon className="h-5 w-5" />;
   }
@@ -168,16 +178,14 @@ const DesktopNavTab: FC<DesktopNavTabProps> = ({ id, label, count, active, onSel
       aria-current={active ? "page" : undefined}
       title={label}
       className={`inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center gap-1 whitespace-nowrap border-b-2 px-2 transition-colors ${
-        active
-          ? "border-[#0F766E] text-[#0F766E]"
-          : "border-transparent text-stone-500 hover:text-stone-900"
+        active ? "border-accent text-accent" : "border-transparent text-ink-muted hover:text-ink"
       }`}
     >
       <NavTabIcon id={id} active={active} />
       {count !== undefined && count > 0 ? (
         <span
           className={`text-xs font-medium tabular-nums ${
-            active ? "text-[#0F766E]" : "text-stone-400"
+            active ? "text-accent" : "text-ink-faint"
           }`}
         >
           {count}
@@ -289,6 +297,44 @@ export default function App() {
     importBackup,
   } = useStudyDeck({ onStorageError: showToast });
 
+  const [isDarkTheme, setIsDarkTheme] = useState<boolean>(() =>
+    resolveEffectiveDark(settings.theme),
+  );
+
+  useEffect(() => {
+    const applyTheme = () => {
+      const dark = resolveEffectiveDark(settings.theme);
+      setIsDarkTheme(dark);
+      if (typeof document !== "undefined") {
+        document.documentElement.classList.toggle("dark", dark);
+        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+        if (metaThemeColor) {
+          metaThemeColor.setAttribute("content", dark ? "#0E100F" : "#0F766E");
+        }
+      }
+      syncNativeStatusBarTheme(dark);
+    };
+
+    applyTheme();
+
+    if (
+      settings.theme !== "system" ||
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleMediaChange = () => {
+      applyTheme();
+    };
+    mediaQuery.addEventListener("change", handleMediaChange);
+    return () => {
+      mediaQuery.removeEventListener("change", handleMediaChange);
+    };
+  }, [settings.theme]);
+
   useEffect(() => {
     if (!toast) return undefined;
     const timer = window.setTimeout(() => {
@@ -346,6 +392,11 @@ export default function App() {
     setSettingsOpen(false);
   }, []);
 
+  const toggleThemeQuick = useCallback(() => {
+    const nextTheme: ThemePreference = isDarkTheme ? "light" : "dark";
+    updateSettings({ theme: nextTheme });
+  }, [isDarkTheme, updateSettings]);
+
   const openPronunciationGuide = useCallback(() => {
     setGuideOpen(true);
   }, []);
@@ -366,9 +417,9 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-[#FAFAFA] text-[#111827]">
+    <div className="min-h-screen bg-canvas text-ink">
       <header
-        className={`pt-safe sticky top-0 border-b border-stone-200/80 bg-[#FAFAFA]/90 backdrop-blur-md ${
+        className={`pt-safe sticky top-0 border-b border-border/80 bg-surface-glass backdrop-blur-md ${
           searchElevated ? "z-[9999]" : "z-30"
         }`}
       >
@@ -380,7 +431,7 @@ export default function App() {
             <button
               type="button"
               onClick={selectLearnTab}
-              className="shrink-0 whitespace-nowrap font-display text-lg font-bold tracking-tight text-stone-900"
+              className="shrink-0 whitespace-nowrap font-display text-lg font-bold tracking-tight text-ink"
             >
               Nói
             </button>
@@ -422,9 +473,22 @@ export default function App() {
             <PWAInstallButton variant="compact" />
             <button
               type="button"
+              onClick={toggleThemeQuick}
+              aria-label={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
+              title={isDarkTheme ? "Switch to light theme" : "Switch to dark theme"}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+            >
+              {isDarkTheme ? (
+                <Sun className="h-5 w-5" aria-hidden="true" />
+              ) : (
+                <Moon className="h-5 w-5" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={openGeneralSettings}
               aria-label="Dialect and audio settings"
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-stone-600 transition-colors hover:bg-stone-100 hover:text-stone-900"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
             >
               <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -438,7 +502,7 @@ export default function App() {
           tabIndex={-1}
           aria-label="Close search overlay"
           onClick={closeSearch}
-          className="fixed inset-0 z-[9990] bg-stone-950/15 backdrop-blur-[1px]"
+          className="fixed inset-0 z-[9990] bg-backdrop/40 backdrop-blur-[1px]"
         />
       ) : null}
 
@@ -522,14 +586,14 @@ export default function App() {
 
       <nav
         aria-label="Mobile navigation"
-        className="pb-safe fixed bottom-0 left-0 right-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur-md md:hidden"
+        className="pb-safe fixed bottom-0 left-0 right-0 z-30 border-t border-border bg-surface-nav backdrop-blur-md md:hidden"
       >
         <div className="grid min-h-15 grid-cols-4 items-center">
           <button
             type="button"
             onClick={selectLearnTab}
             className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 ${
-              tab === "learn" ? "text-[#0F766E]" : "text-stone-500"
+              tab === "learn" ? "text-accent" : "text-ink-muted"
             }`}
           >
             <GraduationCap className="h-5 w-5" aria-hidden="true" />
@@ -540,7 +604,7 @@ export default function App() {
             type="button"
             onClick={selectPhrasesTab}
             className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 ${
-              tab === "phrases" ? "text-[#0F766E]" : "text-stone-500"
+              tab === "phrases" ? "text-accent" : "text-ink-muted"
             }`}
           >
             <BookOpen className="h-5 w-5" aria-hidden="true" />
@@ -553,11 +617,11 @@ export default function App() {
             type="button"
             onClick={selectPhrasebookTab}
             className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 ${
-              tab === "phrasebook" ? "text-[#0F766E]" : "text-stone-500"
+              tab === "phrasebook" ? "text-accent" : "text-ink-muted"
             }`}
           >
             <Star
-              className={`h-5 w-5 ${tab === "phrasebook" ? "fill-[#0F766E]" : ""}`}
+              className={`h-5 w-5 ${tab === "phrasebook" ? "fill-accent" : ""}`}
               aria-hidden="true"
             />
             <span className="whitespace-nowrap text-[11px] font-medium tracking-tight">Saved</span>
@@ -567,7 +631,7 @@ export default function App() {
             type="button"
             onClick={selectTranslateTab}
             className={`flex min-h-[48px] flex-col items-center justify-center gap-0.5 ${
-              tab === "translate" ? "text-[#0F766E]" : "text-stone-500"
+              tab === "translate" ? "text-accent" : "text-ink-muted"
             }`}
           >
             <GoogleTranslateIcon className="h-5 w-5" />

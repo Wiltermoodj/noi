@@ -1,6 +1,6 @@
 import { DICTIONARY_ENTRIES } from "../data/dictionary";
 import type { DialectRegion, DictEntry, Phrase } from "../types/vietnamese";
-import { getPhrasePhonetic, getPhraseText } from "./storageService";
+import { getPhrasePhonetic } from "./storageService";
 import { approximateVietnamesePhonetic } from "./toneAudioService";
 import { detectDirection, getDictionaryEntryText, normalizeText } from "./translationService";
 import { translateNumericQuery } from "./vietnameseNumbers";
@@ -45,25 +45,102 @@ function containsAllTokens(haystack: string, tokens: readonly string[]): boolean
   return tokens.every((token) => haystack.includes(token));
 }
 
-function scorePhraseMatch(
-  phrase: Phrase,
-  normQuery: string,
-  tokens: readonly string[],
-  region: DialectRegion,
-): number {
+interface IndexedSearchPhrase {
+  enNorm: string;
+  northNorm: string;
+  centralNorm: string;
+  southNorm: string;
+  variantNorms: readonly [string, string, string];
+  phoneticNorms: readonly [string, string, string];
+  combinedHaystack: string;
+}
+
+interface IndexedSearchWord {
+  enNorm: string;
+  aliasNorms: readonly string[];
+  viNorms: readonly string[];
+  combinedHaystack: string;
+}
+
+const searchPhraseIndexCache = new WeakMap<Phrase, IndexedSearchPhrase>();
+const searchWordIndexCache = new WeakMap<DictEntry, IndexedSearchWord>();
+
+function getIndexedSearchPhrase(phrase: Phrase): IndexedSearchPhrase {
+  const cached = searchPhraseIndexCache.get(phrase);
+  if (cached) return cached;
+
   const enNorm = normalizeText(phrase.english);
-  const activeViNorm = normalizeText(getPhraseText(phrase, region));
-  const variantNorms = [
-    activeViNorm,
-    normalizeText(phrase.north),
-    normalizeText(phrase.central),
-    normalizeText(phrase.south),
-  ];
+  const northNorm = normalizeText(phrase.north);
+  const centralNorm = normalizeText(phrase.central);
+  const southNorm = normalizeText(phrase.south);
+  const variantNorms = [northNorm, centralNorm, southNorm] as const;
   const phoneticNorms = [
     normalizeText(phrase.phoneticNorth),
     normalizeText(phrase.phoneticCentral),
     normalizeText(phrase.phoneticSouth),
-  ];
+  ] as const;
+  const combinedHaystack = [
+    enNorm,
+    ...variantNorms,
+    ...phoneticNorms,
+    normalizeText(phrase.category),
+    normalizeText(phrase.streetNote),
+    normalizeText(phrase.textbook),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const indexed: IndexedSearchPhrase = {
+    enNorm,
+    northNorm,
+    centralNorm,
+    southNorm,
+    variantNorms,
+    phoneticNorms,
+    combinedHaystack,
+  };
+  searchPhraseIndexCache.set(phrase, indexed);
+  return indexed;
+}
+
+function getIndexedSearchWord(entry: DictEntry): IndexedSearchWord {
+  const cached = searchWordIndexCache.get(entry);
+  if (cached) return cached;
+
+  const enNorm = normalizeText(entry.en);
+  const aliasNorms = (entry.aliases ?? []).map(normalizeText);
+  const viNorms = [
+    normalizeText(getDictionaryEntryText(entry, "north")),
+    normalizeText(getDictionaryEntryText(entry, "central")),
+    normalizeText(getDictionaryEntryText(entry, "south")),
+    normalizeText(entry.vi),
+    entry.north ? normalizeText(entry.north) : "",
+    entry.central ? normalizeText(entry.central) : "",
+    entry.south ? normalizeText(entry.south) : "",
+  ].filter(Boolean);
+
+  const combinedHaystack = [
+    enNorm,
+    ...aliasNorms,
+    ...viNorms,
+    normalizeText(entry.partOfSpeech),
+    normalizeText(entry.note),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const indexed: IndexedSearchWord = {
+    enNorm,
+    aliasNorms,
+    viNorms,
+    combinedHaystack,
+  };
+  searchWordIndexCache.set(entry, indexed);
+  return indexed;
+}
+
+function scorePhraseMatch(phrase: Phrase, normQuery: string, tokens: readonly string[]): number {
+  const { enNorm, variantNorms, phoneticNorms, combinedHaystack } = getIndexedSearchPhrase(phrase);
 
   let score: number;
   if (enNorm === normQuery || variantNorms.some((v) => v === normQuery)) {
@@ -78,16 +155,6 @@ function scorePhraseMatch(
   } else if (phoneticNorms.some((p) => containsAllTokens(p, tokens))) {
     score = 50;
   } else {
-    const combinedHaystack = [
-      enNorm,
-      ...variantNorms,
-      ...phoneticNorms,
-      normalizeText(phrase.category),
-      normalizeText(phrase.streetNote),
-      normalizeText(phrase.textbook),
-    ]
-      .filter(Boolean)
-      .join(" ");
     if (!containsAllTokens(combinedHaystack, tokens)) {
       return 0;
     }
@@ -97,22 +164,8 @@ function scorePhraseMatch(
   return phrase.isStarred ? score + 3 : score;
 }
 
-function scoreWordMatch(
-  entry: DictEntry,
-  normQuery: string,
-  tokens: readonly string[],
-  region: DialectRegion,
-): number {
-  const enNorm = normalizeText(entry.en);
-  const aliasNorms = (entry.aliases ?? []).map(normalizeText);
-  const activeViNorm = normalizeText(getDictionaryEntryText(entry, region));
-  const viNorms = [
-    activeViNorm,
-    normalizeText(entry.vi),
-    entry.north ? normalizeText(entry.north) : "",
-    entry.central ? normalizeText(entry.central) : "",
-    entry.south ? normalizeText(entry.south) : "",
-  ].filter(Boolean);
+function scoreWordMatch(entry: DictEntry, normQuery: string, tokens: readonly string[]): number {
+  const { enNorm, aliasNorms, viNorms, combinedHaystack } = getIndexedSearchWord(entry);
 
   if (
     enNorm === normQuery ||
@@ -135,16 +188,6 @@ function scoreWordMatch(
   ) {
     return 70;
   }
-
-  const combinedHaystack = [
-    enNorm,
-    ...aliasNorms,
-    ...viNorms,
-    normalizeText(entry.partOfSpeech),
-    normalizeText(entry.note),
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   return containsAllTokens(combinedHaystack, tokens) ? 35 : 0;
 }
@@ -198,7 +241,7 @@ export function searchGlobalEntries(
 
   const matchedPhrases: GlobalSearchPhraseMatch[] = [];
   for (const phrase of phrases) {
-    const score = scorePhraseMatch(phrase, normQuery, tokens, region);
+    const score = scorePhraseMatch(phrase, normQuery, tokens);
     if (score > 0) {
       matchedPhrases.push({ phrase, score });
     }
@@ -210,7 +253,7 @@ export function searchGlobalEntries(
 
   const matchedWords: GlobalSearchWordMatch[] = [];
   for (const entry of dictionaryEntries) {
-    const score = scoreWordMatch(entry, normQuery, tokens, region);
+    const score = scoreWordMatch(entry, normQuery, tokens);
     if (score > 0) {
       matchedWords.push({ entry, score });
     }

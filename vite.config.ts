@@ -130,6 +130,36 @@ export default defineConfig(() => {
         "@": path.resolve(import.meta.dirname, "."),
       },
     },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: "vendor-react",
+                test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+                priority: 30,
+              },
+              {
+                name: "vendor-icons",
+                test: /node_modules[\\/]lucide-react[\\/]/,
+                priority: 25,
+              },
+              {
+                name: "data-phrases",
+                test: /src[\\/]data[\\/]phrases\.ts$/,
+                priority: 20,
+              },
+              {
+                name: "data-dictionary",
+                test: /src[\\/]data[\\/]dictionary\.ts$/,
+                priority: 20,
+              },
+            ],
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.

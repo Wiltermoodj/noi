@@ -45,8 +45,8 @@ export const SpeedControlButton: FC<SpeedControlButtonProps> = ({ value, onChang
         aria-label={`Speech speed ${String(value)}%`}
         className={`inline-flex min-h-[38px] items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 text-xs font-medium tabular-nums transition-colors ${
           value < 100 || open
-            ? "border-[#0F766E]/40 bg-[#0F766E]/10 text-[#0F766E]"
-            : "border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
+            ? "border-accent-border bg-accent-soft text-accent"
+            : "border-border bg-surface text-ink-secondary hover:bg-surface-subtle"
         }`}
       >
         <Gauge className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -55,7 +55,7 @@ export const SpeedControlButton: FC<SpeedControlButtonProps> = ({ value, onChang
       </button>
 
       {open ? (
-        <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-2xl border border-stone-200 bg-white p-4 shadow-xl sm:w-80">
+        <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-2xl border border-border bg-surface p-4 shadow-xl sm:w-80">
           <PlaybackSpeedSlider variant="full" value={value} onChange={onChange} />
         </div>
       ) : null}

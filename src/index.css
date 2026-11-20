@@ -1,13 +1,184 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
+:root {
+  color-scheme: light;
+  --theme-canvas: #f8f7f4;
+  --theme-surface: #ffffff;
+  --theme-surface-subtle: #f2efe9;
+  --theme-surface-muted: #e6e2da;
+  --theme-surface-glass: rgba(248, 247, 244, 0.9);
+  --theme-surface-nav: rgba(255, 255, 255, 0.94);
+  --theme-surface-inverse: #181715;
+
+  --theme-ink: #161513;
+  --theme-ink-secondary: #3d3a36;
+  --theme-ink-muted: #6e6a63;
+  --theme-ink-faint: #9c968e;
+  --theme-ink-inverse: #f8f7f4;
+
+  --theme-border: #e2ddd5;
+  --theme-border-subtle: #ece8e1;
+  --theme-border-strong: #c9c2b8;
+
+  --theme-accent: #0f766e;
+  --theme-accent-hover: #0b5e58;
+  --theme-accent-fg: #ffffff;
+  --theme-accent-soft: rgba(15, 118, 110, 0.11);
+  --theme-accent-muted: rgba(15, 118, 110, 0.06);
+  --theme-accent-border: rgba(15, 118, 110, 0.34);
+
+  --theme-star: #d97706;
+  --theme-star-fill: #f59e0b;
+  --theme-star-soft: #fef3c7;
+  --theme-star-border: #fcd34d;
+  --theme-star-ink: #78350f;
+
+  --theme-success: #047857;
+  --theme-success-soft: #ecfdf5;
+  --theme-success-border: #a7f3d0;
+  --theme-success-ink: #064e3b;
+
+  --theme-warning: #b45309;
+  --theme-warning-soft: #fffbeb;
+  --theme-warning-border: #fde68a;
+  --theme-warning-ink: #78350f;
+
+  --theme-danger: #be123c;
+  --theme-danger-hover: #9f1239;
+  --theme-danger-soft: #fff1f2;
+  --theme-danger-border: #fecdd3;
+  --theme-danger-ink: #881337;
+
+  --theme-info: #0369a1;
+  --theme-info-soft: #f0f9ff;
+  --theme-info-border: #bae6fd;
+  --theme-info-ink: #0c4a6e;
+
+  --theme-backdrop: rgba(18, 17, 15, 0.45);
+}
+
+.dark {
+  color-scheme: dark;
+  --theme-canvas: #0e100f;
+  --theme-surface: #161918;
+  --theme-surface-subtle: #1e2221;
+  --theme-surface-muted: #282d2b;
+  --theme-surface-glass: rgba(14, 16, 15, 0.9);
+  --theme-surface-nav: rgba(22, 25, 24, 0.94);
+  --theme-surface-inverse: #232826;
+
+  --theme-ink: #f2f0ec;
+  --theme-ink-secondary: #c6c3bc;
+  --theme-ink-muted: #938f88;
+  --theme-ink-faint: #64615b;
+  --theme-ink-inverse: #f2f0ec;
+
+  --theme-border: #282d2b;
+  --theme-border-subtle: #1f2322;
+  --theme-border-strong: #3b423f;
+
+  --theme-accent: #2dd4bf;
+  --theme-accent-hover: #14b8a6;
+  --theme-accent-fg: #042f2e;
+  --theme-accent-soft: rgba(45, 212, 191, 0.14);
+  --theme-accent-muted: rgba(45, 212, 191, 0.08);
+  --theme-accent-border: rgba(45, 212, 191, 0.36);
+
+  --theme-star: #fbbf24;
+  --theme-star-fill: #fbbf24;
+  --theme-star-soft: rgba(251, 191, 36, 0.14);
+  --theme-star-border: rgba(251, 191, 36, 0.35);
+  --theme-star-ink: #fde68a;
+
+  --theme-success: #34d399;
+  --theme-success-soft: rgba(52, 211, 153, 0.14);
+  --theme-success-border: rgba(52, 211, 153, 0.34);
+  --theme-success-ink: #a7f3d0;
+
+  --theme-warning: #fbbf24;
+  --theme-warning-soft: rgba(251, 191, 36, 0.13);
+  --theme-warning-border: rgba(251, 191, 36, 0.32);
+  --theme-warning-ink: #fde68a;
+
+  --theme-danger: #fb7185;
+  --theme-danger-hover: #f43f5e;
+  --theme-danger-soft: rgba(251, 113, 133, 0.14);
+  --theme-danger-border: rgba(251, 113, 133, 0.34);
+  --theme-danger-ink: #fecdd3;
+
+  --theme-info: #38bdf8;
+  --theme-info-soft: rgba(56, 189, 248, 0.14);
+  --theme-info-border: rgba(56, 189, 248, 0.34);
+  --theme-info-ink: #bae6fd;
+
+  --theme-backdrop: rgba(0, 0, 0, 0.68);
+}
+
+@theme inline {
   --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --color-canvas: var(--theme-canvas);
+  --color-surface: var(--theme-surface);
+  --color-surface-subtle: var(--theme-surface-subtle);
+  --color-surface-muted: var(--theme-surface-muted);
+  --color-surface-glass: var(--theme-surface-glass);
+  --color-surface-nav: var(--theme-surface-nav);
+  --color-surface-inverse: var(--theme-surface-inverse);
+
+  --color-ink: var(--theme-ink);
+  --color-ink-secondary: var(--theme-ink-secondary);
+  --color-ink-muted: var(--theme-ink-muted);
+  --color-ink-faint: var(--theme-ink-faint);
+  --color-ink-inverse: var(--theme-ink-inverse);
+
+  --color-border: var(--theme-border);
+  --color-border-subtle: var(--theme-border-subtle);
+  --color-border-strong: var(--theme-border-strong);
+
+  --color-accent: var(--theme-accent);
+  --color-accent-hover: var(--theme-accent-hover);
+  --color-accent-fg: var(--theme-accent-fg);
+  --color-accent-soft: var(--theme-accent-soft);
+  --color-accent-muted: var(--theme-accent-muted);
+  --color-accent-border: var(--theme-accent-border);
+
+  --color-star: var(--theme-star);
+  --color-star-fill: var(--theme-star-fill);
+  --color-star-soft: var(--theme-star-soft);
+  --color-star-border: var(--theme-star-border);
+  --color-star-ink: var(--theme-star-ink);
+
+  --color-success: var(--theme-success);
+  --color-success-soft: var(--theme-success-soft);
+  --color-success-border: var(--theme-success-border);
+  --color-success-ink: var(--theme-success-ink);
+
+  --color-warning: var(--theme-warning);
+  --color-warning-soft: var(--theme-warning-soft);
+  --color-warning-border: var(--theme-warning-border);
+  --color-warning-ink: var(--theme-warning-ink);
+
+  --color-danger: var(--theme-danger);
+  --color-danger-hover: var(--theme-danger-hover);
+  --color-danger-soft: var(--theme-danger-soft);
+  --color-danger-border: var(--theme-danger-border);
+  --color-danger-ink: var(--theme-danger-ink);
+
+  --color-info: var(--theme-info);
+  --color-info-soft: var(--theme-info-soft);
+  --color-info-border: var(--theme-info-border);
+  --color-info-ink: var(--theme-info-ink);
+
+  --color-backdrop: var(--theme-backdrop);
 }
 
 @layer base {
   html {
     font-family: var(--font-sans);
+    background-color: var(--theme-canvas);
+    color: var(--theme-ink);
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: contain;
   }
